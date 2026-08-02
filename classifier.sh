@@ -258,15 +258,16 @@ select_zip() {
         files+=("$f")
     done < <(find "$INPUT_DIR" -maxdepth 1 -type f \( -iname "*.zip" -o -iname "*.tar" -o -iname "*.tar.gz" -o -iname "*.tgz" -o -iname "*.tar.bz2" -o -iname "*.tbz2" -o -iname "*.tar.xz" -o -iname "*.7z" -o -iname "*.rar" \) -print0 2>/dev/null)
 
-    if [ ${#files[@]} -gt 0 ]; then
+    local file_count=${#files[@]}
+    if [ "$file_count" -gt 0 ]; then
         echo "找到以下压缩包（位于 $INPUT_DIR）："
         for i in "${!files[@]}"; do
             echo "  $((i+1))) $(basename "${files[$i]}")"
         done
         echo "  0) 手动输入路径"
-        echo -n "请选择编号 (0-${#files[@]}): "
+        echo -n "请选择编号 (0-$file_count): "
         read -r num
-        if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le ${#files[@]} ]; then
+        if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "$file_count" ]; then
             echo "${files[$((num-1))]}"
             return
         elif [ "$num" -eq 0 ]; then
