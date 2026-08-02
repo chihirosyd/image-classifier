@@ -87,9 +87,10 @@ echo ""
 echo "[2/6] 创建本地工作目录..."
 mkdir -p "$TARGET_DIR"
 cd "$TARGET_DIR"
-mkdir -p "$TARGET_DIR/input"
+mkdir -p "$TARGET_DIR/input" "$TARGET_DIR/output"
 echo "  ✅ 工作目录: $TARGET_DIR"
-echo "  ✅ 图片上传目录: $TARGET_DIR/input（请将压缩包放入此文件夹）"
+echo "  ✅ 上传目录: $TARGET_DIR/input（请将压缩包放入此文件夹）"
+echo "  ✅ 输出目录: $TARGET_DIR/output（分类结果存放位置）"
 
 # ---------- 3. 下载脚本文件 ----------
 echo ""

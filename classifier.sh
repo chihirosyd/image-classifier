@@ -5,6 +5,7 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV_DIR="$SCRIPT_DIR/classify_env"
 INPUT_DIR="$SCRIPT_DIR/input"
+OUTPUT_DIR="$SCRIPT_DIR/output"
 CONFIG_FILE="$SCRIPT_DIR/config.json"
 PYTHON_BIN="$VENV_DIR/bin/python"
 PIP_BIN="$VENV_DIR/bin/pip"
@@ -15,7 +16,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-mkdir -p "$INPUT_DIR"
+mkdir -p "$INPUT_DIR" "$OUTPUT_DIR"
 
 show_menu() {
     echo ""
@@ -31,7 +32,8 @@ show_menu() {
     echo "7) 更新脚本"
     echo "0) 退出"
     echo "========================================"
-    echo "默认上传目录: $INPUT_DIR"
+    echo "上传目录: $INPUT_DIR"
+    echo "输出目录: $OUTPUT_DIR"
 }
 
 # 尝试安装 python3-venv（根据系统包管理器自动选择）
@@ -337,6 +339,7 @@ run_classify() {
         SCREEN_NAME="classify_$(date +%s)"
         echo -e "${GREEN}启动 screen 会话：$SCREEN_NAME${NC}"
         echo "分类开始后，按 Ctrl+A D 可脱离后台；重新查看：screen -r $SCREEN_NAME"
+        echo "实时进度: tail -f $SCRIPT_DIR/logs/classify_*.log"
         sleep 2
         screen -dmS "$SCREEN_NAME" bash -c "$CMD"
         echo -e "${YELLOW}任务已在后台启动，会话名：$SCREEN_NAME${NC}"
@@ -355,9 +358,11 @@ list_screens() {
     echo "当前 screen 会话列表："
     screen -list
     echo ""
-    echo -n "输入会话名可恢复（留空返回菜单）："
+    echo -n "输入会话名可恢复，直接回车返回菜单: "
     read -r sname
-    if [ -n "$sname" ]; then screen -r "$sname"; fi
+    if [ -n "$sname" ] && [ "$sname" != "0" ] && [ "$sname" != "q" ]; then
+        screen -r "$sname"
+    fi
 }
 
 clean_env() {

@@ -24,6 +24,7 @@ LOG_INTERVAL = 500        # 每处理多少张打印一次进度
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
 LOG_DIR = os.path.join(SCRIPT_DIR, "logs")
+OUTPUT_DIR = os.path.join(SCRIPT_DIR, "output")
 
 # ---------------------- 日志双写（同时输出到终端和日志文件）----------------------
 class Tee:
@@ -46,7 +47,7 @@ def setup_logging():
     log_f = open(log_path, 'w', encoding='utf-8')
     sys.stdout = Tee(sys.stdout, log_f)
     sys.stderr = Tee(sys.stderr, log_f)
-    print(f"📝 日志文件: {log_path}")
+    print(f"📝 实时日志: {log_path}")
     return log_f
 
 # ---------------------- 磁盘检查 ----------------------
@@ -287,8 +288,9 @@ def main():
             sys.exit(0)
 
     # 确定输出文件名（提前询问，避免处理完才问）
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     out_ext = get_output_ext(zip_in)
-    out_zip = os.path.join(os.getcwd(), f"classified{out_ext}")
+    out_zip = os.path.join(OUTPUT_DIR, f"classified{out_ext}")
     if os.path.exists(out_zip):
         print(f"\n⚠️  {out_zip} 已存在")
         ans = input("  覆盖(y) / 换名保存(n) / 取消(q): ").strip().lower()
@@ -300,10 +302,10 @@ def main():
             if new_name:
                 if '.' not in os.path.splitext(new_name)[1]:
                     new_name += out_ext
-                out_zip = os.path.join(os.getcwd(), new_name)
+                out_zip = os.path.join(OUTPUT_DIR, new_name)
             else:
                 stamp = time.strftime("%Y%m%d_%H%M%S")
-                out_zip = os.path.join(os.getcwd(), f"classified_{stamp}{out_ext}")
+                out_zip = os.path.join(OUTPUT_DIR, f"classified_{stamp}{out_ext}")
     print(f"输出文件: {out_zip}")
 
     # 解压 & 分类（整体包在 try 中，确保异常时清理临时目录）
