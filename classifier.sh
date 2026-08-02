@@ -269,12 +269,12 @@ select_zip() {
     done
 
     if [ "$file_count" -gt 0 ]; then
-        echo "找到以下压缩包（位于 $INPUT_DIR）："
+        echo "找到以下压缩包（位于 $INPUT_DIR）：" >&2
         for i in "${!files[@]}"; do
-            echo "  $((i+1))) $(basename "${files[$i]}")"
+            echo "  $((i+1))) $(basename "${files[$i]}")" >&2
         done
-        echo "  0) 手动输入路径"
-        echo -n "请选择编号 (0-$file_count): "
+        echo "  0) 手动输入路径" >&2
+        echo -n "请选择编号 (0-$file_count): " >&2
         read -r num
         if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "$file_count" ]; then
             echo "${files[$((num-1))]}"
@@ -282,20 +282,20 @@ select_zip() {
         elif [ "$num" -eq 0 ]; then
             :
         else
-            echo "无效选择，切换为手动输入"
+            echo "无效选择，切换为手动输入" >&2
         fi
     else
-        echo -e "${YELLOW}默认目录 ($INPUT_DIR) 中没有压缩包（支持 zip/tar/tar.gz/tar.bz2/tar.xz/7z/rar）。${NC}"
+        echo -e "${YELLOW}默认目录 ($INPUT_DIR) 中没有压缩包（支持 zip/tar/tar.gz/tar.bz2/tar.xz/7z/rar）。${NC}" >&2
     fi
 
-    echo -n "请输入压缩包路径（默认目录: $INPUT_DIR，可直接输文件名）: "
+    echo -n "请输入压缩包路径（默认目录: $INPUT_DIR，可直接输文件名）: " >&2
     read -r manual_path
     if [ -f "$manual_path" ]; then
         echo "$manual_path"
     elif [ -f "$INPUT_DIR/$manual_path" ]; then
         echo "$INPUT_DIR/$manual_path"
     else
-        echo -e "${RED}错误：文件 '$manual_path' 不存在！${NC}"
+        echo -e "${RED}错误：文件 '$manual_path' 不存在！${NC}" >&2
         return 1
     fi
 }
