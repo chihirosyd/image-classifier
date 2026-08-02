@@ -8,7 +8,7 @@
 #   2. 创建本地工作目录 input/
 #   3. 下载 classify.py / menu.sh / config.json
 #   4. 安装 python3-venv（Debian/Ubuntu 必需，否则虚拟环境无法创建）
-#   5. 可选安装 7z/unrar 解压工具（处理 .7z/.rar）
+#   5. 可选安装 7z 解压工具（处理 .7z/.rar）
 #   6. 启动主菜单 menu.sh
 # ===================================================================
 
@@ -100,11 +100,13 @@ curl -sSL -o config.json "${DOWNLOAD_BASE}/config.json"
 chmod +x classify.py menu.sh
 echo "  ✅ 下载完成。"
 
-# ---------- 4. 可选：安装 python3-venv（Debian/Ubuntu 需要）----------
+# ---------- 4. 安装 python3-venv（Debian/Ubuntu 必需，否则虚拟环境无法创建）----------
 echo ""
-echo -n "[4/6] 是否安装 python3-venv（虚拟环境支持）？(y/n，推荐 y): "
+echo -n "[4/6] 是否安装 python3-venv（虚拟环境支持）？(y/n，回车默认为y): "
 read -r install_venv
-if [ "$install_venv" != "n" ]; then
+install_venv=${install_venv,,}
+install_venv=${install_venv:-y}
+if [ "$install_venv" = "y" ]; then
     pyver=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "")
     pkg="python3-venv"
     [ -n "$pyver" ] && pkg="python${pyver}-venv"
@@ -135,35 +137,37 @@ else
     echo "  ⏭️ 跳过。"
 fi
 
-# ---------- 5. 可选：安装 7z/rar 解压工具 ----------
+# ---------- 5. 可选：安装 7z 解压工具 ----------
 echo ""
-echo -n "[5/6] 是否安装 7z/unrar 解压工具（支持 .7z/.rar 格式）？(y/n，推荐 y): "
+echo -n "[5/6] 是否安装 7z 解压工具（支持 .7z/.rar 格式）？(y/n，回车默认为y): "
 read -r install_tools
-if [ "$install_tools" != "n" ]; then
-    echo "正在安装 p7zip-full unrar ..."
+install_tools=${install_tools,,}
+install_tools=${install_tools:-y}
+if [ "$install_tools" = "y" ]; then
+    echo "正在安装 p7zip-full ..."
     ok=0
     if [ "$(id -u)" -eq 0 ]; then
         if command -v apt &>/dev/null; then
-            apt-get update && apt-get install p7zip-full unrar -y && ok=1 || true
+            apt-get update && apt-get install p7zip-full -y && ok=1 || true
         elif command -v yum &>/dev/null; then
-            yum install p7zip p7zip-plugins unrar -y && ok=1 || true
+            yum install p7zip p7zip-plugins -y && ok=1 || true
         elif command -v dnf &>/dev/null; then
-            dnf install p7zip p7zip-plugins unrar -y && ok=1 || true
+            dnf install p7zip p7zip-plugins -y && ok=1 || true
         fi
     else
         if command -v apt &>/dev/null; then
-            sudo apt-get update && sudo apt-get install p7zip-full unrar -y && ok=1 || true
+            sudo apt-get update && sudo apt-get install p7zip-full -y && ok=1 || true
         elif command -v yum &>/dev/null; then
-            sudo yum install p7zip p7zip-plugins unrar -y && ok=1 || true
+            sudo yum install p7zip p7zip-plugins -y && ok=1 || true
         elif command -v dnf &>/dev/null; then
-            sudo dnf install p7zip p7zip-plugins unrar -y && ok=1 || true
+            sudo dnf install p7zip p7zip-plugins -y && ok=1 || true
         fi
     fi
     if [ "$ok" -eq 1 ]; then
         echo "  ✅ 工具安装完成。"
     else
         echo "  ⚠️  安装失败，.7z/.rar 功能不可用。"
-        echo "  手动安装: sudo apt install p7zip-full unrar -y"
+        echo "  手动安装: sudo apt install p7zip-full -y"
     fi
 else
     echo "  ⏭️ 跳过。"

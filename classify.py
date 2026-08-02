@@ -99,7 +99,7 @@ def cleanup_leftover_dirs():
 
 # ---------------------- 多格式解压 ----------------------
 def extract_archive(archive_path, dest_dir):
-    """根据后缀自动选择解压方式：zip / tar / tar.gz / 7z / rar"""
+    """根据后缀自动选择解压方式：zip / tar / tar.gz / 7z（含 rar）"""
     name = archive_path.lower()
 
     if name.endswith('.zip'):
@@ -110,17 +110,12 @@ def extract_archive(archive_path, dest_dir):
         with tarfile.open(archive_path, 'r:*') as tf:
             tf.extractall(dest_dir)
 
-    elif name.endswith('.7z'):
+    elif name.endswith(('.7z', '.rar')):
+        # 7z 支持解压 .7z 和 .rar，无需单独安装 unrar
         result = subprocess.run(['7z', 'x', archive_path, f'-o{dest_dir}', '-y'],
                                 capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(f"7z 解压失败:\n{result.stderr.strip()}")
-
-    elif name.endswith('.rar'):
-        result = subprocess.run(['unrar', 'x', '-y', archive_path, dest_dir],
-                                capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"unrar 解压失败:\n{result.stderr.strip()}")
 
     else:
         raise ValueError(f"不支持的压缩格式: {archive_path}")
@@ -234,6 +229,9 @@ def main():
     phone_max_width = args.phone_width if args.phone_width is not None else config.get('phone_max_width', PHONE_MAX_WIDTH)
     blur_threshold = args.blur_threshold if args.blur_threshold is not None else config.get('blur_threshold', BLUR_THRESHOLD)
     log_interval = args.log_interval if args.log_interval is not None else config.get('log_interval', LOG_INTERVAL)
+    # 防止除零错误：进度间隔至少为 1
+    if log_interval < 1:
+        log_interval = 1
 
     # --show-config：仅显示配置
     if args.show_config:

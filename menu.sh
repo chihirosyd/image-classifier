@@ -78,8 +78,10 @@ setup_env() {
     fi
 
     if [ -d "$VENV_DIR" ]; then
-        echo -n "虚拟环境已存在，是否重新创建？(y/n) "
+        echo -n "虚拟环境已存在，是否重新创建？(y/n，回车默认为n): "
         read -r answer
+        answer=${answer,,}
+        answer=${answer:-n}
         if [ "$answer" = "y" ]; then
             rm -rf "$VENV_DIR"
             echo "已删除旧环境"
@@ -131,51 +133,61 @@ setup_env() {
 
     source "$VENV_DIR/bin/activate"
     echo "安装依赖包..."
-    "$PIP_BIN" install --upgrade pip -q
-    "$PIP_BIN" install "${REQUIRED[@]}"
+    if ! "$PIP_BIN" install --upgrade pip -q; then
+        echo -e "${RED}pip 升级失败，请检查网络连接${NC}"
+        deactivate
+        return 1
+    fi
+    if ! "$PIP_BIN" install "${REQUIRED[@]}"; then
+        echo -e "${RED}依赖安装失败，请检查网络连接${NC}"
+        deactivate
+        return 1
+    fi
     deactivate
     echo -e "${GREEN}环境准备完成！${NC}"
 
-    # 检查可选工具：7z / unrar
-    if ! command -v 7z &>/dev/null || ! command -v unrar &>/dev/null; then
+    # 检查可选工具：7z
+    if ! command -v 7z &>/dev/null; then
         echo ""
-        echo -e "${YELLOW}⚠️  缺少解压工具（处理 .7z/.rar 需要 7z + unrar）。${NC}"
-        echo -n "是否现在安装？(y/n): "
+        echo -e "${YELLOW}⚠️  缺少 7z 解压工具（处理 .7z/.rar 需要）。${NC}"
+        echo -n "是否现在安装？(y/n，回车默认为y): "
         read -r install_ext
-        if [ "$install_ext" != "n" ]; then
+        install_ext=${install_ext,,}
+        install_ext=${install_ext:-y}
+        if [ "$install_ext" = "y" ]; then
             _install_extract_tools
         fi
     fi
 }
 
-# 安装 7z/unrar 解压工具（显示详细错误）
+# 安装 7z 解压工具（显示详细错误）
 _install_extract_tools() {
-    echo "正在安装 p7zip-full unrar ..."
+    echo "正在安装 p7zip-full ..."
     local ok=0
     if [ "$(id -u)" -eq 0 ]; then
         # 已是 root，无需 sudo
         if command -v apt &>/dev/null; then
-            apt-get update && apt-get install p7zip-full unrar -y && ok=1
+            apt-get update && apt-get install p7zip-full -y && ok=1
         elif command -v yum &>/dev/null; then
-            yum install p7zip p7zip-plugins unrar -y && ok=1
+            yum install p7zip p7zip-plugins -y && ok=1
         elif command -v dnf &>/dev/null; then
-            dnf install p7zip p7zip-plugins unrar -y && ok=1
+            dnf install p7zip p7zip-plugins -y && ok=1
         fi
     else
         if command -v apt &>/dev/null; then
-            sudo apt-get update && sudo apt-get install p7zip-full unrar -y && ok=1
+            sudo apt-get update && sudo apt-get install p7zip-full -y && ok=1
         elif command -v yum &>/dev/null; then
-            sudo yum install p7zip p7zip-plugins unrar -y && ok=1
+            sudo yum install p7zip p7zip-plugins -y && ok=1
         elif command -v dnf &>/dev/null; then
-            sudo dnf install p7zip p7zip-plugins unrar -y && ok=1
+            sudo dnf install p7zip p7zip-plugins -y && ok=1
         fi
     fi
     if [ "$ok" -eq 1 ]; then
-        echo -e "${GREEN}✅ 解压工具安装完成${NC}"
+        echo -e "${GREEN}✅ 7z 解压工具安装完成${NC}"
     else
         echo -e "${RED}❌ 安装失败，请手动执行:${NC}"
-        echo "   sudo apt install p7zip-full unrar -y (Debian/Ubuntu)"
-        echo "   sudo yum install p7zip p7zip-plugins unrar -y (CentOS/RHEL)"
+        echo "   sudo apt install p7zip-full -y (Debian/Ubuntu)"
+        echo "   sudo yum install p7zip p7zip-plugins -y (CentOS/RHEL)"
     fi
 }
 
@@ -210,10 +222,17 @@ update_scripts() {
     fi
 
     echo "正在下载最新脚本..."
-    local tmp_dir=$(mktemp -d)
-    curl -sSL -o "$tmp_dir/menu.sh" "$BASE/menu.sh"
-    curl -sSL -o "$tmp_dir/classify.py" "$BASE/classify.py"
-    curl -sSL -o "$tmp_dir/config.json.new" "$BASE/config.json"
+    local tmp_dir
+    tmp_dir=$(mktemp -d) || { echo -e "${RED}❌ 无法创建临时目录${NC}"; return 1; }
+    local dl_ok=1
+    curl -sSL -o "$tmp_dir/menu.sh" "$BASE/menu.sh" || dl_ok=0
+    curl -sSL -o "$tmp_dir/classify.py" "$BASE/classify.py" || dl_ok=0
+    curl -sSL -o "$tmp_dir/config.json.new" "$BASE/config.json" || dl_ok=0
+    if [ "$dl_ok" -eq 0 ]; then
+        echo -e "${RED}❌ 下载失败，请检查网络后重试${NC}"
+        rm -rf "$tmp_dir"
+        return 1
+    fi
 
     # 替换脚本文件
     cp "$tmp_dir/menu.sh" "$SCRIPT_DIR/menu.sh"
@@ -282,9 +301,10 @@ run_classify() {
     fi
     echo -e "使用压缩包: ${GREEN}$zipfile${NC}"
 
-    echo -n "是否在后台 screen 中运行？(y/n，推荐 y)："
+    echo -n "是否在后台 screen 中运行？(y/n，回车默认为y): "
     read -r use_screen
-    if [ "$use_screen" != "y" ]; then use_screen="n"; fi
+    use_screen=${use_screen,,}
+    use_screen=${use_screen:-y}
 
     if [ "$use_screen" = "y" ] && ! command -v screen &>/dev/null; then
         echo -e "${RED}错误：未安装 screen，请先执行: sudo apt install screen -y${NC}"
@@ -292,13 +312,14 @@ run_classify() {
         use_screen="n"
     fi
 
-    echo -n "是否降低 CPU 优先级（nice -n 19）？(y/n，推荐 y)："
+    echo -n "是否降低 CPU 优先级（nice -n 19）？(y/n，回车默认为y): "
     read -r use_nice
-    if [ "$use_nice" != "y" ]; then use_nice="n"; fi
+    use_nice=${use_nice,,}
+    use_nice=${use_nice:-y}
 
-    CMD="source $VENV_DIR/bin/activate && "
+    CMD="source \"$VENV_DIR/bin/activate\" && "
     if [ "$use_nice" = "y" ]; then CMD+="nice -n 19 "; fi
-    CMD+="python $SCRIPT_DIR/classify.py \"$zipfile\""
+    CMD+="python \"$SCRIPT_DIR/classify.py\" \"$zipfile\""
 
     if [ "$use_screen" = "y" ]; then
         SCREEN_NAME="classify_$(date +%s)"
@@ -329,8 +350,10 @@ list_screens() {
 
 clean_env() {
     if [ -d "$VENV_DIR" ]; then
-        echo -n "确定删除虚拟环境？(y/n)："
+        echo -n "确定删除虚拟环境？(y/n，回车默认为n): "
         read -r answer
+        answer=${answer,,}
+        answer=${answer:-n}
         if [ "$answer" = "y" ]; then
             rm -rf "$VENV_DIR"
             echo -e "${GREEN}虚拟环境已删除${NC}"
