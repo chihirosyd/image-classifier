@@ -12,6 +12,7 @@
 
 import os, sys, shutil, tempfile, zipfile, tarfile, subprocess, time, argparse, json, signal
 import cv2
+import numpy as np
 
 IMG_EXT = {'.jpg', '.jpeg', '.jfif', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif', '.ico'}
 
@@ -22,6 +23,31 @@ LOG_INTERVAL = 500        # 每处理多少张打印一次进度
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
+LOG_DIR = os.path.join(SCRIPT_DIR, "logs")
+
+# ---------------------- 日志双写（同时输出到终端和日志文件）----------------------
+class Tee:
+    """将输出同时写入多个流"""
+    def __init__(self, *files):
+        self.files = files
+    def write(self, obj):
+        for f in self.files:
+            f.write(obj)
+            f.flush()
+    def flush(self):
+        for f in self.files:
+            f.flush()
+
+def setup_logging():
+    """创建 logs/ 目录并返回日志文件对象，将 stdout/stderr 重定向为双写"""
+    os.makedirs(LOG_DIR, exist_ok=True)
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    log_path = os.path.join(LOG_DIR, f"classify_{stamp}.log")
+    log_f = open(log_path, 'w', encoding='utf-8')
+    sys.stdout = Tee(sys.stdout, log_f)
+    sys.stderr = Tee(sys.stderr, log_f)
+    print(f"📝 日志文件: {log_path}")
+    return log_f
 
 # ---------------------- 磁盘检查 ----------------------
 def check_disk_space(zip_path):
@@ -85,12 +111,16 @@ def extract_archive(archive_path, dest_dir):
             tf.extractall(dest_dir)
 
     elif name.endswith('.7z'):
-        subprocess.run(['7z', 'x', archive_path, f'-o{dest_dir}', '-y'],
-                       check=True, capture_output=True, text=True)
+        result = subprocess.run(['7z', 'x', archive_path, f'-o{dest_dir}', '-y'],
+                                capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"7z 解压失败:\n{result.stderr.strip()}")
 
     elif name.endswith('.rar'):
-        subprocess.run(['unrar', 'x', '-y', archive_path, dest_dir],
-                       check=True, capture_output=True, text=True)
+        result = subprocess.run(['unrar', 'x', '-y', archive_path, dest_dir],
+                                capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"unrar 解压失败:\n{result.stderr.strip()}")
 
     else:
         raise ValueError(f"不支持的压缩格式: {archive_path}")
@@ -147,9 +177,11 @@ def get_output_ext(input_path):
 
 # ---------------------- 分类逻辑（一次读取完成尺寸+清晰度检测）----------------------
 def classify_image(img_path, blur_threshold=BLUR_THRESHOLD, phone_max_width=PHONE_MAX_WIDTH):
-    """一次 cv2.imread 同时获取尺寸和清晰度，避免重复 I/O"""
+    """一次读取同时获取尺寸和清晰度，避免重复 I/O（兼容非 ASCII 路径）"""
     try:
-        img = cv2.imread(img_path)
+        # 使用 np.fromfile + imdecode 替代 imread，兼容中文等非 ASCII 路径
+        img_array = np.fromfile(img_path, dtype=np.uint8)
+        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
         if img is None:
             return None
 
@@ -228,6 +260,9 @@ def main():
         print(f"✅ 配置已保存到: {save_path}")
         if not args.zipfile:
             return
+
+    # 设置日志双写（终端 + 文件）—— 在确认需要实际处理后
+    setup_logging()
 
     # 必须有 zip 文件
     if not args.zipfile:

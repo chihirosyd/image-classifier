@@ -4,11 +4,11 @@
 # 用法: bash <(curl -sSL https://raw.githubusercontent.com/chihirosyd/image-classifier/main/install.sh)
 #
 # 功能:
-#   1. 自动检测能否直连 GitHub，不行则依次尝试预设镜像
-#   2. 如果预设镜像全部失败，让用户手动输入镜像地址
-#   3. 下载 classify.py、menu.sh 和 config.json 到本地
-#   4. 创建默认图片上传目录 input/
-#   5. 可选安装 7z/unrar 解压工具
+#   1. 自动检测网络（直连 GitHub → 镜像 → 手动输入）
+#   2. 创建本地工作目录 input/
+#   3. 下载 classify.py / menu.sh / config.json
+#   4. 安装 python3-venv（Debian/Ubuntu 必需，否则虚拟环境无法创建）
+#   5. 可选安装 7z/unrar 解压工具（处理 .7z/.rar）
 #   6. 启动主菜单 menu.sh
 # ===================================================================
 
@@ -33,7 +33,7 @@ echo "========================================="
 
 # ---------- 1. 检测并选择合适的下载地址 ----------
 echo ""
-echo "[1/5] 检测网络并选择下载源..."
+echo "[1/6] 检测网络并选择下载源..."
 
 try_download_test() {
     local base_url="$1"
@@ -84,7 +84,7 @@ fi
 
 # ---------- 2. 创建本地目录 ----------
 echo ""
-echo "[2/5] 创建本地工作目录..."
+echo "[2/6] 创建本地工作目录..."
 mkdir -p "$TARGET_DIR"
 cd "$TARGET_DIR"
 mkdir -p "$TARGET_DIR/input"
@@ -93,26 +93,85 @@ echo "  ✅ 图片上传目录: $TARGET_DIR/input（请将压缩包放入此文�
 
 # ---------- 3. 下载脚本文件 ----------
 echo ""
-echo "[3/5] 下载核心脚本..."
+echo "[3/6] 下载核心脚本..."
 curl -sSL -o classify.py "${DOWNLOAD_BASE}/classify.py"
 curl -sSL -o menu.sh "${DOWNLOAD_BASE}/menu.sh"
 curl -sSL -o config.json "${DOWNLOAD_BASE}/config.json"
 chmod +x classify.py menu.sh
 echo "  ✅ 下载完成。"
 
-# ---------- 4. 可选：安装 7z/rar 解压工具 ----------
+# ---------- 4. 可选：安装 python3-venv（Debian/Ubuntu 需要）----------
 echo ""
-echo -n "[4/5] 是否安装 7z/unrar 解压工具（支持 .7z/.rar 格式）？(y/n，推荐 y): "
-read -r install_tools
-if [ "$install_tools" != "n" ]; then
-    (sudo apt-get update -qq && sudo apt-get install p7zip-full unrar -y -qq) 2>/dev/null && echo "  ✅ 工具安装完成。" || echo "  ⚠️ 安装失败，.7z/.rar 功能不可用。"
+echo -n "[4/6] 是否安装 python3-venv（虚拟环境支持）？(y/n，推荐 y): "
+read -r install_venv
+if [ "$install_venv" != "n" ]; then
+    pyver=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "")
+    pkg="python3-venv"
+    [ -n "$pyver" ] && pkg="python${pyver}-venv"
+    ok=0
+    if [ "$(id -u)" -eq 0 ]; then
+        if command -v apt &>/dev/null; then
+            apt-get update -qq && apt-get install "$pkg" -y -qq && ok=1 || true
+        elif command -v yum &>/dev/null; then
+            yum install python3-venv -y && ok=1 || true
+        elif command -v dnf &>/dev/null; then
+            dnf install python3-venv -y && ok=1 || true
+        fi
+    else
+        if command -v apt &>/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install "$pkg" -y -qq && ok=1 || true
+        elif command -v yum &>/dev/null; then
+            sudo yum install python3-venv -y && ok=1 || true
+        elif command -v dnf &>/dev/null; then
+            sudo dnf install python3-venv -y && ok=1 || true
+        fi
+    fi
+    if [ "$ok" -eq 1 ]; then
+        echo "  ✅ python3-venv 安装完成。"
+    else
+        echo "  ⚠️  安装失败，可稍后在菜单中重试。"
+    fi
 else
     echo "  ⏭️ 跳过。"
 fi
 
-# ---------- 5. 启动主菜单 ----------
+# ---------- 5. 可选：安装 7z/rar 解压工具 ----------
 echo ""
-echo "[5/5] 启动主菜单..."
+echo -n "[5/6] 是否安装 7z/unrar 解压工具（支持 .7z/.rar 格式）？(y/n，推荐 y): "
+read -r install_tools
+if [ "$install_tools" != "n" ]; then
+    echo "正在安装 p7zip-full unrar ..."
+    ok=0
+    if [ "$(id -u)" -eq 0 ]; then
+        if command -v apt &>/dev/null; then
+            apt-get update && apt-get install p7zip-full unrar -y && ok=1 || true
+        elif command -v yum &>/dev/null; then
+            yum install p7zip p7zip-plugins unrar -y && ok=1 || true
+        elif command -v dnf &>/dev/null; then
+            dnf install p7zip p7zip-plugins unrar -y && ok=1 || true
+        fi
+    else
+        if command -v apt &>/dev/null; then
+            sudo apt-get update && sudo apt-get install p7zip-full unrar -y && ok=1 || true
+        elif command -v yum &>/dev/null; then
+            sudo yum install p7zip p7zip-plugins unrar -y && ok=1 || true
+        elif command -v dnf &>/dev/null; then
+            sudo dnf install p7zip p7zip-plugins unrar -y && ok=1 || true
+        fi
+    fi
+    if [ "$ok" -eq 1 ]; then
+        echo "  ✅ 工具安装完成。"
+    else
+        echo "  ⚠️  安装失败，.7z/.rar 功能不可用。"
+        echo "  手动安装: sudo apt install p7zip-full unrar -y"
+    fi
+else
+    echo "  ⏭️ 跳过。"
+fi
+
+# ---------- 6. 启动主菜单 ----------
+echo ""
+echo "[6/6] 启动主菜单..."
 echo "========================================="
 echo "  安装完成！进入交互式管理界面。"
 echo "========================================="

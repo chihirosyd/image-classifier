@@ -28,9 +28,44 @@ show_menu() {
     echo "4) 调整分类参数"
     echo "5) 查看当前配置"
     echo "6) 清理环境（删除虚拟环境）"
-    echo "7) 退出"
+    echo "7) 更新脚本"
+    echo "0) 退出"
     echo "========================================"
     echo "默认上传目录: $INPUT_DIR"
+}
+
+# 尝试安装 python3-venv（根据系统包管理器自动选择）
+_install_python_venv() {
+    local pyver
+    pyver=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "")
+    local pkg="python3-venv"
+    [ -n "$pyver" ] && pkg="python${pyver}-venv"
+
+    if [ "$(id -u)" -eq 0 ]; then
+        # 已是 root，无需 sudo
+        if command -v apt &>/dev/null; then
+            apt-get update -qq && apt-get install "$pkg" -y -qq && return 0
+        elif command -v yum &>/dev/null; then
+            yum install python3-venv -y && return 0
+        elif command -v dnf &>/dev/null; then
+            dnf install python3-venv -y && return 0
+        fi
+    else
+        if command -v apt &>/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install "$pkg" -y -qq && return 0
+        elif command -v yum &>/dev/null; then
+            sudo yum install python3-venv -y && return 0
+        elif command -v dnf &>/dev/null; then
+            sudo dnf install python3-venv -y && return 0
+        fi
+    fi
+    return 1
+}
+
+# 检查 ensurepip 是否可用（Debian/Ubuntu 需安装 python3-venv）
+_check_venv_ready() {
+    python3 -c "import ensurepip" 2>/dev/null && return 0
+    return 1
 }
 
 setup_env() {
@@ -40,26 +75,6 @@ setup_env() {
     if ! command -v python3 &>/dev/null; then
         echo -e "${RED}错误：未找到 python3，请先安装 Python 3${NC}"
         return 1
-    fi
-
-    # 检查/安装 python3-venv
-    if ! python3 -m venv --help &>/dev/null; then
-        echo "未检测到 python3-venv，尝试安装..."
-        local install_ok=0
-        if command -v apt &>/dev/null; then
-            sudo apt update && sudo apt install python3-venv -y && install_ok=1
-        elif command -v yum &>/dev/null; then
-            sudo yum install python3-venv -y && install_ok=1
-        elif command -v dnf &>/dev/null; then
-            sudo dnf install python3-venv -y && install_ok=1
-        else
-            echo -e "${RED}无法自动安装 python3-venv，请手动安装后重试${NC}"
-            return 1
-        fi
-        if [ "$install_ok" -eq 0 ]; then
-            echo -e "${RED}python3-venv 安装失败，请手动安装后重试${NC}"
-            return 1
-        fi
     fi
 
     if [ -d "$VENV_DIR" ]; then
@@ -74,8 +89,46 @@ setup_env() {
         fi
     fi
 
+    # 确保 ensurepip 可用
+    if ! _check_venv_ready; then
+        echo "ensurepip 不可用，尝试安装 python3-venv ..."
+        if _install_python_venv; then
+            echo -e "${GREEN}✅ python3-venv 安装成功${NC}"
+        else
+            echo -e "${RED}无法自动安装 python3-venv，请手动安装后重试${NC}"
+            echo "  Debian/Ubuntu: sudo apt install python3-venv -y"
+            echo "  CentOS/RHEL:   sudo yum install python3-venv -y"
+            return 1
+        fi
+        # 再次验证
+        if ! _check_venv_ready; then
+            echo -e "${RED}ensurepip 仍然不可用，请检查 Python 安装${NC}"
+            return 1
+        fi
+    fi
+
     echo "创建虚拟环境..."
-    python3 -m venv "$VENV_DIR"
+    if ! python3 -m venv "$VENV_DIR" 2>&1; then
+        echo -e "${RED}虚拟环境创建失败！${NC}"
+        echo "尝试安装缺失的依赖后重试..."
+        if _install_python_venv; then
+            echo "重新创建虚拟环境..."
+            rm -rf "$VENV_DIR"
+            if ! python3 -m venv "$VENV_DIR"; then
+                echo -e "${RED}虚拟环境创建仍然失败，请检查 Python 安装${NC}"
+                return 1
+            fi
+        else
+            echo -e "${RED}请手动执行: sudo apt install python3-venv -y${NC}"
+            return 1
+        fi
+    fi
+
+    if [ ! -f "$VENV_DIR/bin/activate" ]; then
+        echo -e "${RED}错误：虚拟环境未正确创建（activate 文件缺失）${NC}"
+        return 1
+    fi
+
     source "$VENV_DIR/bin/activate"
     echo "安装依赖包..."
     "$PIP_BIN" install --upgrade pip -q
@@ -84,23 +137,107 @@ setup_env() {
     echo -e "${GREEN}环境准备完成！${NC}"
 
     # 检查可选工具：7z / unrar
-    if ! command -v 7z &>/dev/null && ! command -v unrar &>/dev/null; then
+    if ! command -v 7z &>/dev/null || ! command -v unrar &>/dev/null; then
         echo ""
-        echo -e "${YELLOW}⚠️  未检测到 7z 和 unrar（处理 .7z/.rar 需要）。${NC}"
-        echo "   安装: sudo apt install p7zip-full unrar -y (Debian/Ubuntu)"
-        echo "   安装: sudo yum install p7zip p7zip-plugins unrar -y (CentOS/RHEL)"
-    elif ! command -v 7z &>/dev/null; then
-        echo -e "${YELLOW}⚠️  未检测到 7z，.7z 文件将无法处理。${NC}"
-    elif ! command -v unrar &>/dev/null; then
-        echo -e "${YELLOW}⚠️  未检测到 unrar，.rar 文件将无法处理。${NC}"
+        echo -e "${YELLOW}⚠️  缺少解压工具（处理 .7z/.rar 需要 7z + unrar）。${NC}"
+        echo -n "是否现在安装？(y/n): "
+        read -r install_ext
+        if [ "$install_ext" != "n" ]; then
+            _install_extract_tools
+        fi
     fi
+}
+
+# 安装 7z/unrar 解压工具（显示详细错误）
+_install_extract_tools() {
+    echo "正在安装 p7zip-full unrar ..."
+    local ok=0
+    if [ "$(id -u)" -eq 0 ]; then
+        # 已是 root，无需 sudo
+        if command -v apt &>/dev/null; then
+            apt-get update && apt-get install p7zip-full unrar -y && ok=1
+        elif command -v yum &>/dev/null; then
+            yum install p7zip p7zip-plugins unrar -y && ok=1
+        elif command -v dnf &>/dev/null; then
+            dnf install p7zip p7zip-plugins unrar -y && ok=1
+        fi
+    else
+        if command -v apt &>/dev/null; then
+            sudo apt-get update && sudo apt-get install p7zip-full unrar -y && ok=1
+        elif command -v yum &>/dev/null; then
+            sudo yum install p7zip p7zip-plugins unrar -y && ok=1
+        elif command -v dnf &>/dev/null; then
+            sudo dnf install p7zip p7zip-plugins unrar -y && ok=1
+        fi
+    fi
+    if [ "$ok" -eq 1 ]; then
+        echo -e "${GREEN}✅ 解压工具安装完成${NC}"
+    else
+        echo -e "${RED}❌ 安装失败，请手动执行:${NC}"
+        echo "   sudo apt install p7zip-full unrar -y (Debian/Ubuntu)"
+        echo "   sudo yum install p7zip p7zip-plugins unrar -y (CentOS/RHEL)"
+    fi
+}
+
+# 更新脚本（从 GitHub 拉取最新版）
+update_scripts() {
+    echo -e "${YELLOW}>>> 更新脚本${NC}"
+    local REPO="https://raw.githubusercontent.com/chihirosyd/image-classifier/main"
+    local MIRRORS=(
+        "https://ghproxy.com/$REPO"
+        "https://ghproxy.net/$REPO"
+        "https://mirror.ghproxy.com/$REPO"
+    )
+    local BASE="$REPO"
+
+    # 检测下载源
+    if ! curl -sSL --connect-timeout 5 --max-time 10 "$REPO/menu.sh" -o /dev/null 2>/dev/null; then
+        echo "直连 GitHub 失败，尝试镜像..."
+        BASE=""
+        for m in "${MIRRORS[@]}"; do
+            if curl -sSL --connect-timeout 5 --max-time 10 "$m/menu.sh" -o /dev/null 2>/dev/null; then
+                BASE="$m"
+                echo -e "${GREEN}✅ 镜像可用: $m${NC}"
+                break
+            fi
+        done
+        if [ -z "$BASE" ]; then
+            echo -e "${RED}❌ 所有下载源均不可用，更新取消${NC}"
+            return 1
+        fi
+    else
+        echo -e "${GREEN}✅ 直连 GitHub 成功${NC}"
+    fi
+
+    echo "正在下载最新脚本..."
+    local tmp_dir=$(mktemp -d)
+    curl -sSL -o "$tmp_dir/menu.sh" "$BASE/menu.sh"
+    curl -sSL -o "$tmp_dir/classify.py" "$BASE/classify.py"
+    curl -sSL -o "$tmp_dir/config.json.new" "$BASE/config.json"
+
+    # 替换脚本文件
+    cp "$tmp_dir/menu.sh" "$SCRIPT_DIR/menu.sh"
+    cp "$tmp_dir/classify.py" "$SCRIPT_DIR/classify.py"
+    chmod +x "$SCRIPT_DIR/menu.sh" "$SCRIPT_DIR/classify.py"
+
+    # 配置文件仅在不存在时创建，避免覆盖用户配置
+    if [ ! -f "$CONFIG_FILE" ]; then
+        cp "$tmp_dir/config.json.new" "$CONFIG_FILE"
+        echo "已创建默认配置文件"
+    else
+        echo "保留现有配置文件 ($CONFIG_FILE)"
+    fi
+
+    rm -rf "$tmp_dir"
+    echo -e "${GREEN}✅ 脚本更新完成！${NC}"
+    echo "请重新启动菜单以加载新版本。"
 }
 
 select_zip() {
     local files=()
     while IFS= read -r -d $'\0' f; do
         files+=("$f")
-    done < <(find "$INPUT_DIR" -maxdepth 1 -type f \( -iname "*.zip" -o -iname "*.tar" -o -iname "*.tar.gz" -o -iname "*.tgz" -o -iname "*.7z" -o -iname "*.rar" \) -print0 2>/dev/null)
+    done < <(find "$INPUT_DIR" -maxdepth 1 -type f \( -iname "*.zip" -o -iname "*.tar" -o -iname "*.tar.gz" -o -iname "*.tgz" -o -iname "*.tar.bz2" -o -iname "*.tbz2" -o -iname "*.tar.xz" -o -iname "*.7z" -o -iname "*.rar" \) -print0 2>/dev/null)
 
     if [ ${#files[@]} -gt 0 ]; then
         echo "找到以下压缩包（位于 $INPUT_DIR）："
@@ -119,7 +256,7 @@ select_zip() {
             echo "无效选择，切换为手动输入"
         fi
     else
-        echo -e "${YELLOW}默认目录 ($INPUT_DIR) 中没有压缩包（支持 zip/tar.gz/7z/rar）。${NC}"
+        echo -e "${YELLOW}默认目录 ($INPUT_DIR) 中没有压缩包（支持 zip/tar/tar.gz/tar.bz2/tar.xz/7z/rar）。${NC}"
     fi
 
     echo -n "请输入压缩包完整路径："
@@ -149,6 +286,12 @@ run_classify() {
     read -r use_screen
     if [ "$use_screen" != "y" ]; then use_screen="n"; fi
 
+    if [ "$use_screen" = "y" ] && ! command -v screen &>/dev/null; then
+        echo -e "${RED}错误：未安装 screen，请先执行: sudo apt install screen -y${NC}"
+        echo "已切换为前台运行。"
+        use_screen="n"
+    fi
+
     echo -n "是否降低 CPU 优先级（nice -n 19）？(y/n，推荐 y)："
     read -r use_nice
     if [ "$use_nice" != "y" ]; then use_nice="n"; fi
@@ -171,6 +314,11 @@ run_classify() {
 }
 
 list_screens() {
+    if ! command -v screen &>/dev/null; then
+        echo -e "${RED}未安装 screen，无法查看后台任务。${NC}"
+        echo "  安装: sudo apt install screen -y"
+        return
+    fi
     echo "当前 screen 会话列表："
     screen -list
     echo ""
@@ -255,7 +403,7 @@ EOF
 
 while true; do
     show_menu
-    echo -n "请选择操作 [1-7]："
+    echo -n "请选择操作 [0-7]："
     read -r choice
     case $choice in
         1) setup_env ;;
@@ -264,8 +412,9 @@ while true; do
         4) config_params ;;
         5) show_config ;;
         6) clean_env ;;
-        7) echo "再见！"; exit 0 ;;
-        *) echo -e "${RED}无效选择，请输入 1-7${NC}" ;;
+        7) update_scripts ;;
+        0) echo "再见！"; exit 0 ;;
+        *) echo -e "${RED}无效选择，请输入 0-7${NC}" ;;
     esac
     echo ""
     echo "按 Enter 返回菜单..."
