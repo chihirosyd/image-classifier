@@ -254,11 +254,20 @@ update_scripts() {
 
 select_zip() {
     local files=()
-    while IFS= read -r -d $'\0' f; do
-        files+=("$f")
-    done < <(find "$INPUT_DIR" -maxdepth 1 -type f \( -iname "*.zip" -o -iname "*.tar" -o -iname "*.tar.gz" -o -iname "*.tgz" -o -iname "*.tar.bz2" -o -iname "*.tbz2" -o -iname "*.tar.xz" -o -iname "*.7z" -o -iname "*.rar" \) -print0 2>/dev/null)
+    local file_count=0
+    # 直接遍历 input/ 目录，避免 find + 进程替换在某些环境下不稳定
+    for f in "$INPUT_DIR"/*; do
+        [ -f "$f" ] || continue
+        local name_lower
+        name_lower=$(basename "$f" | tr '[:upper:]' '[:lower:]')
+        case "$name_lower" in
+            *.zip|*.tar|*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.7z|*.rar)
+                files+=("$f")
+                file_count=$((file_count + 1))
+                ;;
+        esac
+    done
 
-    local file_count=${#files[@]}
     if [ "$file_count" -gt 0 ]; then
         echo "找到以下压缩包（位于 $INPUT_DIR）："
         for i in "${!files[@]}"; do
