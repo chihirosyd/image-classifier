@@ -278,10 +278,12 @@ select_zip() {
         echo -e "${YELLOW}默认目录 ($INPUT_DIR) 中没有压缩包（支持 zip/tar/tar.gz/tar.bz2/tar.xz/7z/rar）。${NC}"
     fi
 
-    echo -n "请输入压缩包完整路径："
+    echo -n "请输入压缩包路径（默认目录: $INPUT_DIR，可直接输文件名）: "
     read -r manual_path
     if [ -f "$manual_path" ]; then
         echo "$manual_path"
+    elif [ -f "$INPUT_DIR/$manual_path" ]; then
+        echo "$INPUT_DIR/$manual_path"
     else
         echo -e "${RED}错误：文件 '$manual_path' 不存在！${NC}"
         return 1
