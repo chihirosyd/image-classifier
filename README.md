@@ -37,7 +37,7 @@ bash <(curl -sSL https://raw.githubusercontent.com/chihirosyd/image-classifier/m
 ```
 image-classifier/
 ├── classify.py      # Python 核心分类引擎
-├── menu.sh          # Bash 交互式管理菜单
+├── classifier.sh    # Bash 交互式管理菜单
 ├── install.sh       # 一键安装脚本
 ├── config.json      # 默认配置文件
 ├── .gitignore       # Git 忽略规则
@@ -76,7 +76,7 @@ flowchart TD
 ### 方式一：交互式菜单调整（推荐）
 
 ```bash
-bash menu.sh  →  选择 [4] 调整分类参数
+bash classifier.sh  →  选择 [4] 调整分类参数
 ```
 
 按提示输入新值，直接回车保留当前值，自动保存到 `config.json`。
@@ -122,7 +122,7 @@ python classify.py --config my.json ...   # 指定配置文件路径
 ### 方式一：交互式菜单（推荐）
 
 ```bash
-bash menu.sh
+bash classifier.sh
 ```
 
 ```

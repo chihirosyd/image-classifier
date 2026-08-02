@@ -203,11 +203,11 @@ update_scripts() {
     local BASE="$REPO"
 
     # 检测下载源
-    if ! curl -sSL --connect-timeout 5 --max-time 10 "$REPO/menu.sh" -o /dev/null 2>/dev/null; then
+    if ! curl -sSL --connect-timeout 5 --max-time 10 "$REPO/classifier.sh" -o /dev/null 2>/dev/null; then
         echo "直连 GitHub 失败，尝试镜像..."
         BASE=""
         for m in "${MIRRORS[@]}"; do
-            if curl -sSL --connect-timeout 5 --max-time 10 "$m/menu.sh" -o /dev/null 2>/dev/null; then
+            if curl -sSL --connect-timeout 5 --max-time 10 "$m/classifier.sh" -o /dev/null 2>/dev/null; then
                 BASE="$m"
                 echo -e "${GREEN}✅ 镜像可用: $m${NC}"
                 break
@@ -225,7 +225,7 @@ update_scripts() {
     local tmp_dir
     tmp_dir=$(mktemp -d) || { echo -e "${RED}❌ 无法创建临时目录${NC}"; return 1; }
     local dl_ok=1
-    curl -sSL -o "$tmp_dir/menu.sh" "$BASE/menu.sh" || dl_ok=0
+    curl -sSL -o "$tmp_dir/classifier.sh" "$BASE/classifier.sh" || dl_ok=0
     curl -sSL -o "$tmp_dir/classify.py" "$BASE/classify.py" || dl_ok=0
     curl -sSL -o "$tmp_dir/config.json.new" "$BASE/config.json" || dl_ok=0
     if [ "$dl_ok" -eq 0 ]; then
@@ -235,9 +235,9 @@ update_scripts() {
     fi
 
     # 替换脚本文件
-    cp "$tmp_dir/menu.sh" "$SCRIPT_DIR/menu.sh"
+    cp "$tmp_dir/classifier.sh" "$SCRIPT_DIR/classifier.sh"
     cp "$tmp_dir/classify.py" "$SCRIPT_DIR/classify.py"
-    chmod +x "$SCRIPT_DIR/menu.sh" "$SCRIPT_DIR/classify.py"
+    chmod +x "$SCRIPT_DIR/classifier.sh" "$SCRIPT_DIR/classify.py"
 
     # 配置文件仅在不存在时创建，避免覆盖用户配置
     if [ ! -f "$CONFIG_FILE" ]; then

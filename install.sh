@@ -6,10 +6,10 @@
 # 功能:
 #   1. 自动检测网络（直连 GitHub → 镜像 → 手动输入）
 #   2. 创建本地工作目录 input/
-#   3. 下载 classify.py / menu.sh / config.json
+#   3. 下载 classify.py / classifier.sh / config.json
 #   4. 安装 python3-venv（Debian/Ubuntu 必需，否则虚拟环境无法创建）
 #   5. 可选安装 7z 解压工具（处理 .7z/.rar）
-#   6. 启动主菜单 menu.sh
+#   6. 启动主菜单 classifier.sh
 # ===================================================================
 
 set -e
@@ -24,7 +24,7 @@ MIRROR_LIST=(
     "https://mirror.ghproxy.com/$REPO_RAW_BASE"
 )
 
-TEST_FILE="menu.sh"
+TEST_FILE="classifier.sh"
 TARGET_DIR="$HOME/image-classifier"
 
 echo "========================================="
@@ -95,9 +95,9 @@ echo "  ✅ 图片上传目录: $TARGET_DIR/input（请将压缩包放入此文�
 echo ""
 echo "[3/6] 下载核心脚本..."
 curl -sSL -o classify.py "${DOWNLOAD_BASE}/classify.py"
-curl -sSL -o menu.sh "${DOWNLOAD_BASE}/menu.sh"
+curl -sSL -o classifier.sh "${DOWNLOAD_BASE}/classifier.sh"
 curl -sSL -o config.json "${DOWNLOAD_BASE}/config.json"
-chmod +x classify.py menu.sh
+chmod +x classify.py classifier.sh
 echo "  ✅ 下载完成。"
 
 # ---------- 4. 安装 python3-venv（Debian/Ubuntu 必需，否则虚拟环境无法创建）----------
@@ -180,10 +180,10 @@ echo "========================================="
 echo "  安装完成！进入交互式管理界面。"
 echo "========================================="
 echo ""
-bash "$TARGET_DIR/menu.sh"
+bash "$TARGET_DIR/classifier.sh"
 
 echo ""
 echo "========================================="
 echo "  感谢使用图片分类工具！"
-echo "  下次可直接运行: bash $TARGET_DIR/menu.sh"
+echo "  下次可直接运行: bash $TARGET_DIR/classifier.sh"
 echo "========================================="
