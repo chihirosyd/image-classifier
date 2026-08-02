@@ -82,13 +82,25 @@ setup_env() {
     "$PIP_BIN" install "${REQUIRED[@]}"
     deactivate
     echo -e "${GREEN}环境准备完成！${NC}"
+
+    # 检查可选工具：7z / unrar
+    if ! command -v 7z &>/dev/null && ! command -v unrar &>/dev/null; then
+        echo ""
+        echo -e "${YELLOW}⚠️  未检测到 7z 和 unrar（处理 .7z/.rar 需要）。${NC}"
+        echo "   安装: sudo apt install p7zip-full unrar -y (Debian/Ubuntu)"
+        echo "   安装: sudo yum install p7zip p7zip-plugins unrar -y (CentOS/RHEL)"
+    elif ! command -v 7z &>/dev/null; then
+        echo -e "${YELLOW}⚠️  未检测到 7z，.7z 文件将无法处理。${NC}"
+    elif ! command -v unrar &>/dev/null; then
+        echo -e "${YELLOW}⚠️  未检测到 unrar，.rar 文件将无法处理。${NC}"
+    fi
 }
 
 select_zip() {
     local files=()
     while IFS= read -r -d $'\0' f; do
         files+=("$f")
-    done < <(find "$INPUT_DIR" -maxdepth 1 -type f \( -iname "*.zip" \) -print0 2>/dev/null)
+    done < <(find "$INPUT_DIR" -maxdepth 1 -type f \( -iname "*.zip" -o -iname "*.tar" -o -iname "*.tar.gz" -o -iname "*.tgz" -o -iname "*.7z" -o -iname "*.rar" \) -print0 2>/dev/null)
 
     if [ ${#files[@]} -gt 0 ]; then
         echo "找到以下压缩包（位于 $INPUT_DIR）："
@@ -107,7 +119,7 @@ select_zip() {
             echo "无效选择，切换为手动输入"
         fi
     else
-        echo -e "${YELLOW}默认目录 ($INPUT_DIR) 中没有 zip 文件。${NC}"
+        echo -e "${YELLOW}默认目录 ($INPUT_DIR) 中没有压缩包（支持 zip/tar.gz/7z/rar）。${NC}"
     fi
 
     echo -n "请输入压缩包完整路径："

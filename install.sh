@@ -8,7 +8,8 @@
 #   2. 如果预设镜像全部失败，让用户手动输入镜像地址
 #   3. 下载 classify.py、menu.sh 和 config.json 到本地
 #   4. 创建默认图片上传目录 input/
-#   5. 启动主菜单 menu.sh
+#   5. 可选安装 7z/unrar 解压工具
+#   6. 启动主菜单 menu.sh
 # ===================================================================
 
 set -e
@@ -32,7 +33,7 @@ echo "========================================="
 
 # ---------- 1. 检测并选择合适的下载地址 ----------
 echo ""
-echo "[1/4] 检测网络并选择下载源..."
+echo "[1/5] 检测网络并选择下载源..."
 
 try_download_test() {
     local base_url="$1"
@@ -83,7 +84,7 @@ fi
 
 # ---------- 2. 创建本地目录 ----------
 echo ""
-echo "[2/4] 创建本地工作目录..."
+echo "[2/5] 创建本地工作目录..."
 mkdir -p "$TARGET_DIR"
 cd "$TARGET_DIR"
 mkdir -p "$TARGET_DIR/input"
@@ -92,16 +93,26 @@ echo "  ✅ 图片上传目录: $TARGET_DIR/input（请将压缩包放入此文�
 
 # ---------- 3. 下载脚本文件 ----------
 echo ""
-echo "[3/4] 下载核心脚本..."
+echo "[3/5] 下载核心脚本..."
 curl -sSL -o classify.py "${DOWNLOAD_BASE}/classify.py"
 curl -sSL -o menu.sh "${DOWNLOAD_BASE}/menu.sh"
 curl -sSL -o config.json "${DOWNLOAD_BASE}/config.json"
 chmod +x classify.py menu.sh
 echo "  ✅ 下载完成。"
 
-# ---------- 4. 启动主菜单 ----------
+# ---------- 4. 可选：安装 7z/rar 解压工具 ----------
 echo ""
-echo "[4/4] 启动主菜单..."
+echo -n "[4/5] 是否安装 7z/unrar 解压工具（支持 .7z/.rar 格式）？(y/n，推荐 y): "
+read -r install_tools
+if [ "$install_tools" != "n" ]; then
+    (sudo apt-get update -qq && sudo apt-get install p7zip-full unrar -y -qq) 2>/dev/null && echo "  ✅ 工具安装完成。" || echo "  ⚠️ 安装失败，.7z/.rar 功能不可用。"
+else
+    echo "  ⏭️ 跳过。"
+fi
+
+# ---------- 5. 启动主菜单 ----------
+echo ""
+echo "[5/5] 启动主菜单..."
 echo "========================================="
 echo "  安装完成！进入交互式管理界面。"
 echo "========================================="

@@ -17,7 +17,7 @@ Thumbs.db
 
 # Runtime — 默认上传目录和分类输出
 input/
-classified*.zip
+classified*
 
 # Temp
 /tmp/

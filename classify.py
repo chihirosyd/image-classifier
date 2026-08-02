@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-用法: python classify.py 压缩包.zip [选项]
-输出: classified.zip（包含 手机/、电脑/、模糊/ 三个文件夹）
+用法: python classify.py 压缩包 [选项]
+输出: 与原格式一致的分类压缩包（包含 手机/、电脑/、模糊/ 三个文件夹）
 
 分类规则：
   1. 先检测清晰度（拉普拉斯方差 < 模糊阈值 → 模糊）
@@ -10,14 +10,14 @@
 参数优先级：命令行参数 > 配置文件(config.json) > 代码默认值
 """
 
-import os, sys, shutil, tempfile, zipfile, time, argparse, json, signal
+import os, sys, shutil, tempfile, zipfile, tarfile, subprocess, time, argparse, json, signal
 import cv2
 
 IMG_EXT = {'.jpg', '.jpeg', '.jfif', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif', '.ico'}
 
 # ─────────── 默认参数（可被命令行或配置文件覆盖）───────────
 PHONE_MAX_WIDTH = 1200    # 手机判定最大宽度（像素），覆盖主流手机
-BLUR_THRESHOLD = 100      # 模糊阈值，值越大判定为模糊的图越多
+BLUR_THRESHOLD = 100      # 模糊敏感度，越高归入模糊的越多
 LOG_INTERVAL = 500        # 每处理多少张打印一次进度
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -37,7 +37,7 @@ def check_disk_space(zip_path):
         f"压缩包大小: {zip_size:.2f} GB",
         f"VPS 总空间: {total_gb:.2f} GB",
         f"VPS 可用空间: {free_gb:.2f} GB",
-        f"预估峰值占用: {peak_need:.2f} GB",
+        f"预估峰值占用（保守估计）: {peak_need:.2f} GB",
     ]
     safe = free_gb > peak_need + 1
     if safe:
@@ -70,6 +70,80 @@ def cleanup_leftover_dirs():
                     shutil.rmtree(path, ignore_errors=True)
     except Exception:
         pass
+
+# ---------------------- 多格式解压 ----------------------
+def extract_archive(archive_path, dest_dir):
+    """根据后缀自动选择解压方式：zip / tar / tar.gz / 7z / rar"""
+    name = archive_path.lower()
+
+    if name.endswith('.zip'):
+        with zipfile.ZipFile(archive_path, 'r') as zf:
+            zf.extractall(dest_dir)
+
+    elif name.endswith(('.tar', '.tar.gz', '.tar.bz2', '.tar.xz', '.tgz', '.tbz2')):
+        with tarfile.open(archive_path, 'r:*') as tf:
+            tf.extractall(dest_dir)
+
+    elif name.endswith('.7z'):
+        subprocess.run(['7z', 'x', archive_path, f'-o{dest_dir}', '-y'],
+                       check=True, capture_output=True, text=True)
+
+    elif name.endswith('.rar'):
+        subprocess.run(['unrar', 'x', '-y', archive_path, dest_dir],
+                       check=True, capture_output=True, text=True)
+
+    else:
+        raise ValueError(f"不支持的压缩格式: {archive_path}")
+
+# ---------------------- 多格式打包 ----------------------
+def create_archive(out_path, dirs, tmp_dir):
+    """根据输出文件后缀自动选择打包方式：zip / tar / tar.gz"""
+    # 收集所有待打包文件
+    file_list = []
+    for folder_name, folder_path in dirs:
+        for root, _, files in os.walk(folder_path):
+            for fname in files:
+                full = os.path.join(root, fname)
+                arcname = os.path.relpath(full, tmp_dir)
+                file_list.append((full, arcname))
+
+    name = out_path.lower()
+
+    if name.endswith('.zip'):
+        with zipfile.ZipFile(out_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for full, arcname in file_list:
+                zf.write(full, arcname)
+
+    elif name.endswith(('.tar', '.tar.gz', '.tar.bz2', '.tar.xz', '.tgz', '.tbz2')):
+        if name.endswith('.gz') or name.endswith('.tgz'):
+            mode = 'w:gz'
+        elif name.endswith('.bz2') or name.endswith('.tbz2'):
+            mode = 'w:bz2'
+        elif name.endswith('.xz'):
+            mode = 'w:xz'
+        else:
+            mode = 'w'
+        with tarfile.open(out_path, mode) as tf:
+            for full, arcname in file_list:
+                tf.add(full, arcname)
+
+    else:
+        raise ValueError(f"不支持的输出格式: {out_path}")
+
+# ---------------------- 输出格式映射 ----------------------
+def get_output_ext(input_path):
+    """根据输入压缩包格式确定输出扩展名（7z/rar 回退为 zip）"""
+    name = input_path.lower()
+    if name.endswith('.tar.gz') or name.endswith('.tgz'):
+        return '.tar.gz'
+    elif name.endswith('.tar.bz2') or name.endswith('.tbz2'):
+        return '.tar.bz2'
+    elif name.endswith('.tar.xz'):
+        return '.tar.xz'
+    elif name.endswith('.tar'):
+        return '.tar'
+    # .7z / .rar / .zip 及其他 → 统一输出 .zip
+    return '.zip'
 
 # ---------------------- 分类逻辑（一次读取完成尺寸+清晰度检测）----------------------
 def classify_image(img_path, blur_threshold=BLUR_THRESHOLD, phone_max_width=PHONE_MAX_WIDTH):
@@ -105,7 +179,7 @@ def main():
     signal.signal(signal.SIGTERM, _handle_sigterm)
 
     parser = argparse.ArgumentParser(
-        description='图片分类工具 - 按手机/电脑/模糊自动归类 ZIP 中的图片')
+        description='图片分类工具 - 按手机/电脑/模糊自动归类压缩包中的图片')
     parser.add_argument('zipfile', nargs='?', help='输入压缩包路径')
     parser.add_argument('--phone-width', type=int, default=None,
                         help=f'手机判定最大宽度，像素（默认 {PHONE_MAX_WIDTH}）')
@@ -180,7 +254,8 @@ def main():
             sys.exit(0)
 
     # 确定输出文件名（提前询问，避免处理完才问）
-    out_zip = os.path.join(os.getcwd(), "classified.zip")
+    out_ext = get_output_ext(zip_in)
+    out_zip = os.path.join(os.getcwd(), f"classified{out_ext}")
     if os.path.exists(out_zip):
         print(f"\n⚠️  {out_zip} 已存在")
         ans = input("  覆盖(y) / 换名保存(n) / 取消(q): ").strip().lower()
@@ -190,11 +265,12 @@ def main():
         elif ans == 'n':
             new_name = input("  请输入新文件名（不含路径，留空自动加时间戳）: ").strip()
             if new_name:
-                new_name = new_name if new_name.endswith('.zip') else new_name + '.zip'
+                if '.' not in os.path.splitext(new_name)[1]:
+                    new_name += out_ext
                 out_zip = os.path.join(os.getcwd(), new_name)
             else:
                 stamp = time.strftime("%Y%m%d_%H%M%S")
-                out_zip = os.path.join(os.getcwd(), f"classified_{stamp}.zip")
+                out_zip = os.path.join(os.getcwd(), f"classified_{stamp}{out_ext}")
     print(f"输出文件: {out_zip}")
 
     # 解压 & 分类（整体包在 try 中，确保异常时清理临时目录）
@@ -205,8 +281,7 @@ def main():
         os.makedirs(extract_dir, exist_ok=True)
 
         print(f"\n正在解压 {zip_in} ...")
-        with zipfile.ZipFile(zip_in, 'r') as zf:
-            zf.extractall(extract_dir)
+        extract_archive(zip_in, extract_dir)
 
         # 目标文件夹
         dirs = {
@@ -272,15 +347,10 @@ def main():
 
         # 打包
         print(f"\n正在创建分类压缩包 {out_zip} ...")
-        with zipfile.ZipFile(out_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
-            for folder_name, folder_path in [("手机", dirs['phone']),
-                                             ("电脑", dirs['desktop']),
-                                             ("模糊", dirs['blur'])]:
-                for root, _, files in os.walk(folder_path):
-                    for fname in files:
-                        full = os.path.join(root, fname)
-                        arcname = os.path.relpath(full, tmp_dir)
-                        zf.write(full, arcname)
+        category_dirs = [("手机", dirs['phone']),
+                        ("电脑", dirs['desktop']),
+                        ("模糊", dirs['blur'])]
+        create_archive(out_zip, category_dirs, tmp_dir)
 
         print(f"全部完成！请下载: {out_zip}")
 

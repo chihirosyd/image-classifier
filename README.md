@@ -1,6 +1,6 @@
 # 📦 图片分类工具 (image-classifier)
 
-一键将 ZIP 压缩包内的图片按 **手机截图**、**电脑截图**、**模糊图片** 自动分类，输出 `classified.zip`。
+一键将压缩包（ZIP / TAR / 7Z / RAR）内的图片按 **手机截图**、**电脑截图**、**模糊图片** 自动分类，输出与原格式一致的分类压缩包。
 
 ---
 
@@ -20,6 +20,7 @@ bash <(curl -sSL https://raw.githubusercontent.com/chihirosyd/image-classifier/m
 
 | 功能 | 说明 |
 |------|------|
+| 🗜️ 多格式 | 支持 ZIP / TAR / TAR.GZ / 7Z / RAR 压缩包 |
 | 📱 智能分类 | 宽度 ≤ 1200px 且竖屏（高 > 宽）→ 手机；其余 → 电脑 |
 | 🔍 模糊检测 | OpenCV 拉普拉斯方差（Laplacian Variance），阈值 100 |
 | 📊 实时进度 | 每 500 张打印一次，显示速度 + 预计剩余时间（ETA） |
@@ -148,7 +149,7 @@ pip install opencv-python-headless numpy
 
 # 运行分类
 python3 classify.py 图片包.zip
-# → 输出 classified.zip
+# → 输出 classified.zip（或与原格式一致）
 ```
 
 ---
@@ -162,7 +163,7 @@ python3 classify.py 图片包.zip
 压缩包大小: 2.35 GB
 VPS 总空间: 50.00 GB
 VPS 可用空间: 32.50 GB
-预估峰值占用: 10.11 GB
+预估峰值占用（保守估计）: 10.11 GB
 ✅ 空间充足，可以安全运行。
 
 正在解压 images.zip ...
@@ -217,6 +218,12 @@ VPS 可用空间: 32.50 GB
 <summary><b>Q: 超大压缩包会不会爆内存？</b></summary>
 
 不会。图片**逐张读取处理**，不会一次性加载所有图片到内存。但解压需要磁盘空间（约 2.5 倍压缩包大小），脚本会提前检查。
+</details>
+
+<details>
+<summary><b>Q: 支持哪些压缩格式？</b></summary>
+
+`.zip` `.tar` `.tar.gz` `.tgz` `.tar.bz2` `.7z` `.rar`。输出格式默认与输入一致（7z/rar 回退为 zip）。其中 7z 需 `p7zip-full`，rar 需 `unrar`，`install.sh` 会自动提示安装。
 </details>
 
 <details>
