@@ -219,7 +219,7 @@ config_params() {
     read -r new_width
     new_width=${new_width:-$cur_width}
 
-    echo -n "模糊阈值，值越大判定为模糊的图越多（当前 $cur_blur）："
+    echo -n "模糊敏感度，越高归入模糊的越多（当前 $cur_blur）："
     read -r new_blur
     new_blur=${new_blur:-$cur_blur}
 

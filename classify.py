@@ -110,7 +110,7 @@ def main():
     parser.add_argument('--phone-width', type=int, default=None,
                         help=f'手机判定最大宽度，像素（默认 {PHONE_MAX_WIDTH}）')
     parser.add_argument('--blur-threshold', type=float, default=None,
-                        help=f'模糊阈值，值越大判定为模糊的图越多（默认 {BLUR_THRESHOLD}）')
+                        help=f'模糊敏感度，越高归入模糊的越多（默认 {BLUR_THRESHOLD}）')
     parser.add_argument('--log-interval', type=int, default=None,
                         help=f'进度打印间隔，张（默认 {LOG_INTERVAL}）')
     parser.add_argument('--config', type=str, default=None,
