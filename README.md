@@ -23,8 +23,9 @@ bash <(curl -sSL https://raw.githubusercontent.com/chihirosyd/image-classifier/m
 | 🗜️ 多格式 | 支持 ZIP / TAR / TAR.GZ / 7Z / RAR 压缩包 |
 | 📱 智能分类 | 宽度 ≤ 1200px 且竖屏（高 > 宽）→ 手机；其余 → 电脑 |
 | 🔍 模糊检测 | OpenCV 拉普拉斯方差（Laplacian Variance），阈值 100 |
+| ⚡ 并行处理 | 多进程并行分类，自动检测 CPU 核心数，速度提升 3-4× |
 | 📊 实时进度 | 每 500 张打印一次，显示速度 + 预计剩余时间（ETA） |
-| 💾 磁盘预估 | 运行前计算峰值空间占用，不足时告警并询问 |
+| 💾 磁盘预估 | 运行前检查临时+输出双分区空间，不足时告警 |
 | 🧹 自动清理 | try/finally 机制，异常退出也不残留临时文件 |
 | 🌐 网络自适应 | GitHub 直连 → ghproxy 镜像 → 自定义镜像，三级降级 |
 | ☕ 低优先级 | 支持 `nice -n 19` 降低 CPU 优先级 |
@@ -41,6 +42,8 @@ image-classifier/
 ├── install.sh       # 一键安装脚本
 ├── config.json      # 默认配置文件
 ├── .gitignore       # Git 忽略规则
+├── VERSION          # 版本号
+├── CHANGELOG.md     # 更新日志
 └── README.md        # 说明文档
 ```
 
@@ -95,17 +98,25 @@ python classify.py 图片.zip --phone-width 1200 --blur-threshold 80 --log-inter
 {
   "phone_max_width": 1200,
   "blur_threshold": 100,
-  "log_interval": 500
+  "log_interval": 500,
+  "workers": 0,
+  "temp_dir": "",
+  "output_dir": ""
 }
 ```
+
+> `workers: 0` 表示自动检测 CPU 核心数；`temp_dir: ""` 表示使用系统临时目录。
 
 ### 参数说明
 
 | 参数 | 默认值 | 说明 |
 |------|:--:|------|
 | `phone_max_width` | 1200 | 手机判定最大宽度（像素），≤此值且竖屏 → 手机 |
-| `blur_threshold` | 100 | 模糊敏感度：越低越宽松（归入模糊的少），越高越严格（归入模糊的多） |
+| `blur_threshold` | 100 | 模糊敏感度：越低越宽松，越高越严格 |
 | `log_interval` | 500 | 每处理多少张打印一次进度 |
+| `workers` | 0 | 并行进程数，0=自动检测，设为 1 可禁用并行 |
+| `temp_dir` | "" | 临时目录路径，留空=系统默认（如 /tmp） |
+| `output_dir` | "" | 输出目录路径，留空=脚本目录下的 output/ |
 
 ### 其他 CLI 选项
 
@@ -113,6 +124,10 @@ python classify.py 图片.zip --phone-width 1200 --blur-threshold 80 --log-inter
 python classify.py --show-config          # 查看当前生效的配置
 python classify.py --save-config          # 将当前参数保存为 config.json
 python classify.py --config my.json ...   # 指定配置文件路径
+python classify.py --workers 4 ...        # 指定并行进程数
+python classify.py --no-parallel ...      # 禁用并行处理
+python classify.py --temp-dir /opt/tmp ... # 指定临时目录
+python classify.py --version              # 显示版本号
 ```
 
 ---
@@ -127,7 +142,7 @@ bash classifier.sh
 
 ```
 ========================================
-      图片分类工具 v1.0
+      图片分类工具 vX.X
 ========================================
 1) 环境准备（创建虚拟环境 + 安装依赖）
 2) 运行图片分类（支持 screen 后台）
@@ -135,7 +150,8 @@ bash classifier.sh
 4) 调整分类参数
 5) 查看当前配置
 6) 清理环境（删除虚拟环境）
-7) 退出
+7) 更新脚本
+0) 退出
 ========================================
 ```
 
@@ -149,7 +165,7 @@ pip install opencv-python-headless numpy
 
 # 运行分类
 python3 classify.py 图片包.zip
-# → 输出 classified.zip（或与原格式一致）
+# → 输出 classified_20260803_150530_图片包.zip（classified_时间戳_源文件名）
 ```
 
 ---
@@ -157,16 +173,22 @@ python3 classify.py 图片包.zip
 ## 📊 运行示例
 
 ```
+当前参数：手机宽度≤1200px | 模糊阈值=100 | 进度间隔=500张 | 进程=4（并行，CPU 4 核）
 ==================================================
 磁盘空间检查
 ==================================================
-压缩包大小: 2.35 GB
-VPS 总空间: 50.00 GB
-VPS 可用空间: 32.50 GB
-预估峰值占用（保守估计）: 10.11 GB
-✅ 空间充足，可以安全运行。
+压缩包大小: 2.35 GB（解压后预估 5.88 GB）
+输出包预估: 约 2.35 GB
+
+📁 工作分区（临时 + 输出在同一分区）:
+  总 50.00 GB | 可用 32.50 GB
+  峰值占用: 9.23 GB（解压 5.88 + 输出 2.35 + 1GB 余量）
+
+✅ 磁盘空间充足，可以安全运行。
+输出文件: ~/image-classifier/output/classified_20260803_150530_images.zip
 
 正在解压 images.zip ...
+  解压完成。
 正在扫描图片文件...
 共发现 8421 张图片，开始分类...
 
@@ -183,8 +205,8 @@ VPS 可用空间: 32.50 GB
   ⏭️  跳过 :     41 张
   📦 合计 :   8421 张
 
-正在创建分类压缩包 classified.zip ...
-全部完成！请下载: /home/user/classified.zip
+正在创建分类压缩包 classified_20260803_150530_images.zip ...
+全部完成！请下载: ~/image-classifier/output/classified_20260803_150530_images.zip
 ```
 
 ---
@@ -211,7 +233,7 @@ VPS 可用空间: 32.50 GB
 <details>
 <summary><b>Q: 支持哪些图片格式？</b></summary>
 
-`.jpg` `.jpeg` `.jfif` `.png` `.gif` `.bmp` `.webp` `.tiff` `.tif` `.ico`，共 10 种。
+`.jpg` `.jpeg` `.jfif` `.png` `.gif` `.bmp` `.webp` `.tiff` `.tif` `.ico` `.heic` `.heif`，共 12 种。
 </details>
 
 <details>
@@ -223,7 +245,7 @@ VPS 可用空间: 32.50 GB
 <details>
 <summary><b>Q: 支持哪些压缩格式？</b></summary>
 
-`.zip` `.tar` `.tar.gz` `.tgz` `.tar.bz2` `.7z` `.rar`。输出格式默认与输入一致（7z/rar 回退为 zip）。其中 7z 需 `p7zip-full`，rar 需 `unrar`，`install.sh` 会自动提示安装。
+`.zip` `.tar` `.tar.gz` `.tgz` `.tar.bz2` `.7z` `.rar`。输出格式默认与输入一致（7z/rar 通过 7z 解压，输出回退为 zip）。其中 7z 需 `p7zip-full`，`install.sh` 会自动提示安装。
 </details>
 
 <details>

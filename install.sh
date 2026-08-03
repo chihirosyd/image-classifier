@@ -72,7 +72,8 @@ else
         if [[ "$custom_mirror" =~ ^https?:// ]]; then
             DOWNLOAD_BASE="$custom_mirror"
         else
-            DOWNLOAD_BASE="https://${custom_mirror}/${REPO_RAW_BASE}"
+            # 用户只输入了域名，拼接为 https://域名/原始raw路径
+            DOWNLOAD_BASE="https://${custom_mirror}/${REPO_RAW_BASE#https://raw.githubusercontent.com/}"
         fi
         if ! try_download_test "$DOWNLOAD_BASE"; then
             echo "  ❌ 提供的镜像也无法连接，安装中止。"
@@ -98,7 +99,21 @@ echo "[3/6] 下载核心脚本..."
 curl -sSL -o classify.py "${DOWNLOAD_BASE}/classify.py"
 curl -sSL -o classifier.sh "${DOWNLOAD_BASE}/classifier.sh"
 curl -sSL -o config.json "${DOWNLOAD_BASE}/config.json"
+curl -sSL -o VERSION "${DOWNLOAD_BASE}/VERSION"
+curl -sSL -o .gitignore "${DOWNLOAD_BASE}/.gitignore"
+curl -sSL -o README.md "${DOWNLOAD_BASE}/README.md" || true
+curl -sSL -o CHANGELOG.md "${DOWNLOAD_BASE}/CHANGELOG.md" || true
 chmod +x classify.py classifier.sh
+
+# 校验下载内容（防止下载到 HTML 错误页）
+verify_ok=1
+head -1 classifier.sh | grep -q '^#!/bin/bash' || verify_ok=0
+head -1 classify.py | grep -q '^#!/usr/bin/env python3' || verify_ok=0
+if [ "$verify_ok" -eq 0 ]; then
+    echo "  ❌ 下载文件校验失败（可能为错误页面），请检查网络后重试。"
+    echo "  手动下载: git clone https://github.com/chihirosyd/image-classifier.git"
+    exit 1
+fi
 echo "  ✅ 下载完成。"
 
 # ---------- 4. 安装 python3-venv（Debian/Ubuntu 必需，否则虚拟环境无法创建）----------
