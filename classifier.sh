@@ -293,8 +293,6 @@ update_scripts() {
     _dl "$tmp_dir/VERSION" "$BASE/VERSION"
     _dl "$tmp_dir/install.sh" "$BASE/install.sh"
     _dl "$tmp_dir/CHANGELOG.md" "$BASE/CHANGELOG.md"
-    _dl "$tmp_dir/.gitignore" "$BASE/.gitignore"
-    _dl "$tmp_dir/README.md" "$BASE/README.md"
     _dl "$tmp_dir/config.json.new" "$BASE/config.json"
     if [ "$dl_ok" -eq 0 ]; then
         echo -e "${RED}❌ 下载失败！${NC}"
@@ -320,8 +318,6 @@ update_scripts() {
     cp "$tmp_dir/VERSION" "$SCRIPT_DIR/VERSION"
     cp "$tmp_dir/install.sh" "$SCRIPT_DIR/install.sh"
     cp "$tmp_dir/CHANGELOG.md" "$SCRIPT_DIR/CHANGELOG.md"
-    cp "$tmp_dir/.gitignore" "$SCRIPT_DIR/.gitignore"
-    cp "$tmp_dir/README.md" "$SCRIPT_DIR/README.md"
     chmod +x "$SCRIPT_DIR/classifier.sh" "$SCRIPT_DIR/classify.py" "$SCRIPT_DIR/install.sh"
 
     # 配置文件：检测新增字段，交互式合并

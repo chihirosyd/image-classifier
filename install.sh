@@ -103,8 +103,6 @@ curl -sSL -o classify.py "${DOWNLOAD_BASE}/classify.py"
 curl -sSL -o classifier.sh "${DOWNLOAD_BASE}/classifier.sh"
 curl -sSL -o config.json "${DOWNLOAD_BASE}/config.json"
 curl -sSL -o VERSION "${DOWNLOAD_BASE}/VERSION"
-curl -sSL -o .gitignore "${DOWNLOAD_BASE}/.gitignore"
-curl -sSL -o README.md "${DOWNLOAD_BASE}/README.md" || echo "  ⚠️  README.md 下载失败（不影响功能）"
 curl -sSL -o CHANGELOG.md "${DOWNLOAD_BASE}/CHANGELOG.md" || echo "  ⚠️  CHANGELOG.md 下载失败（不影响功能）"
 chmod +x classify.py classifier.sh
 
