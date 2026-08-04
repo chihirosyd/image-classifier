@@ -115,9 +115,9 @@ def check_disk_space(zip_path, temp_dir=None, output_dir=None):
         safe = free > total_need
         lines += [
             "",
-            f"📁 工作分区（临时 + 输出在同一分区）:",
+            f"📁 工作分区（当前临时与输出位于同一硬盘分区中）:",
             f"  总 {total:.2f} GB | 可用 {free:.2f} GB",
-            f"  峰值占用: {total_need:.2f} GB（解压 {estimated_unpack:.2f} + 输出 {zip_size:.2f} + 1GB 余量）",
+            f"  峰值需求: {total_need:.2f} GB（解压 {estimated_unpack:.2f} + 输出 {zip_size:.2f} + 安全余量 1GB）",
         ]
     else:
         # 不同分区：各自独立检查
@@ -135,10 +135,10 @@ def check_disk_space(zip_path, temp_dir=None, output_dir=None):
         lines += [
             "",
             f"📁 临时分区 ({tmp_path}): 总 {tmp_total:.2f} GB | 可用 {tmp_free:.2f} GB | 需要 {tmp_need:.2f} GB",
-            ("  ✅ 充足" if tmp_safe else f"  ⚠️  不足！需要 {tmp_need:.2f} GB，仅剩 {tmp_free:.2f} GB"),
+            ("  ✅ 充足" if tmp_safe else f"  ⚠️  空间不足，需要 {tmp_need:.2f} GB，仅剩 {tmp_free:.2f} GB"),
             "",
             f"📁 输出分区 ({out_path}): 总 {out_total:.2f} GB | 可用 {out_free:.2f} GB | 需要 {out_need:.2f} GB",
-            ("  ✅ 充足" if out_safe else f"  ⚠️  不足！需要 {out_need:.2f} GB，仅剩 {out_free:.2f} GB"),
+            ("  ✅ 充足" if out_safe else f"  ⚠️  空间不足，需要 {out_need:.2f} GB，仅剩 {out_free:.2f} GB"),
         ]
         # 如果临时分区不够但输出分区够，建议切换临时目录
         if not tmp_safe and out_safe:
@@ -611,9 +611,14 @@ def main():
         # 确保临时目录被清理
         if tmp_dir and os.path.isdir(tmp_dir):
             shutil.rmtree(tmp_dir, ignore_errors=True)
-        # 关闭日志文件
+        # 关闭日志文件，并恢复原始 stdout/stderr，避免解释器退出时写已关闭的文件
         if _log_file:
             _log_file.close()
+            try:
+                sys.stdout = sys.__stdout__
+                sys.stderr = sys.__stderr__
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     main()

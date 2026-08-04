@@ -1,5 +1,21 @@
 # 更新日志
 
+## v1.3.2 (2026-08-04)
+
+### 优化
+- 更新/安装不再下载 `.gitignore` 和 `README.md`（VPS 运行时无用），下载量从 8 个文件精简到 6 个
+- 磁盘检查提示优化：「峰值需求」替代「峰值占用」，「安全余量 1GB」替代「1GB 余量」，同分区提示更清晰
+- `_print_progress` 进度行新增 `错误:N` 实时显示
+- screen 会话名增加 `_$RANDOM` 后缀，彻底消除同秒碰撞
+- `select_zip()` 空目录不再迭代字面量 `*`（`shopt -s nullglob`）
+- `config_params()` 读取增加 `_rest` 占位防未来字段溢出
+
+### 修复
+- `finally` 中关闭日志文件后恢复原始 stdout/stderr，消除「Exception ignored in sys.unraisablehook」报错
+- `screen -dmS` 创建失败时捕获并提示，不再静默失败
+
+---
+
 ## v1.3.1 (2026-08-04)
 
 ### 修复
