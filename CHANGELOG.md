@@ -1,5 +1,34 @@
 # 更新日志
 
+## v1.3.1 (2026-08-04)
+
+### 修复
+- `config_params()` heredoc 生成 JSON 时路径特殊字符（`\`、`"`）导致配置损坏
+- `config_params()` Python 合并失败时 fallback 覆盖原配置文件，丢失未来新增字段
+- `config_params()` 6 次独立 `python3 -c` 读同一文件 → 合并为 1 次
+- `run_classify()` 文件名含双引号时命令注入漏洞 → 改用 `bash -c` 位置参数
+- `select_zip()` `echo` 吞掉以 `-n`/`-e` 开头的文件名 → 改用 `printf '%s\n'`
+- `update_scripts()` 版本号空白字符导致版本比较恒不等 → 统一 trim
+- `update_scripts()` CHANGELOG sed 正则 `.` 未转义 → 转义版本号中的点号
+- `list_screens()` `screen -r` 未防选项注入 → 添加 `--` 分隔符
+- `show_config()` 有/无 venv 时显示不一致 → 统一添加说明提示
+- `Tee.write()` 对 stdout 每次写都 flush → 仅对非终端流 flush
+- Linux fork 下 Worker 进程继承 SIGTERM handler → 改用 `spawn` 启动方式
+- `install.sh` README/CHANGELOG 下载静默失败 + 已存在目录无警告
+- `run_classify()` 遗留未使用的 CMD 变量死代码 → 移除
+- `update_scripts()` curl `-s` 静默模式无错误详情 → 改用 `-sS` + 失败链接列表
+- `setup_logging()` `os.makedirs` 未被 try 保护 → 权限不足时优雅降级
+- `classify_image()` 异常静默返回 None → 返回 `'error'` 并分类统计
+- `load_config()` JSON 损坏静默返回 `{}` → stderr 输出警告
+- `setup_env()` 保持现有环境时不验证依赖完整性 → 自动检测并提示修复
+- `.gitignore` `classified*` 无 `/` 前缀匹配任意子目录 → 限定根目录
+
+### 安全
+- 配置写入改用环境变量传参，彻底消除 JSON 注入和路径注入风险
+- 命令执行改用 `bash -c` 位置参数，消除文件名命令注入
+
+---
+
 ## v1.3.0 (2026-08-03)
 
 ### 新增

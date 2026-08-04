@@ -16,10 +16,10 @@ venv/
 Thumbs.db
 
 # Runtime — 默认上传目录、分类输出、日志
-input/
-output/
-logs/
-classified*
+/input/
+/output/
+/logs/
+/classified*
 
 # Temp
 /tmp/

@@ -16,6 +16,14 @@ from concurrent.futures import ProcessPoolExecutor
 import cv2
 import numpy as np
 
+# Linux 默认用 fork 创建子进程，会继承父进程的 signal handler。
+# 改用 spawn 避免 Worker 进程误继承 SIGTERM→KeyboardInterrupt 转换，
+# 防止干扰 ProcessPoolExecutor 的正常 Worker 生命周期管理。
+try:
+    multiprocessing.set_start_method('spawn')
+except RuntimeError:
+    pass  # 已在其他位置设置过，忽略
+
 IMG_EXT = {'.jpg', '.jpeg', '.jfif', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif', '.ico', '.heic', '.heif'}
 
 # ─────────── 默认参数（可被命令行或配置文件覆盖）───────────
@@ -41,7 +49,9 @@ class Tee:
     def write(self, obj):
         for f in self.files:
             f.write(obj)
-            f.flush()
+            # 仅对非终端流做立即 flush（日志文件），stdout/stderr 依赖系统缓冲
+            if hasattr(f, 'isatty') and not f.isatty():
+                f.flush()
     def flush(self):
         for f in self.files:
             f.flush()
@@ -57,7 +67,12 @@ _log_file = None  # 全局引用，用于 finally 关闭
 def setup_logging():
     """创建 logs/ 目录并返回日志文件对象，将 stdout/stderr 重定向为双写"""
     global _log_file
-    os.makedirs(LOG_DIR, exist_ok=True)
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+    except Exception:
+        print(f"⚠️  无法创建日志目录: {LOG_DIR}，仅输出到终端。")
+        _log_file = None
+        return None
     stamp = time.strftime("%Y%m%d_%H%M%S")
     log_path = os.path.join(LOG_DIR, f"classify_{stamp}.log")
     try:
@@ -146,8 +161,8 @@ def load_config(config_path=None):
         try:
             with open(path, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except Exception:
-            pass
+        except Exception as e:
+            sys.stderr.write(f"⚠️  配置文件解析失败 ({path}): {e}\n")
     return {}
 
 # ---------------------- 残留清理 ----------------------
@@ -254,7 +269,7 @@ def classify_image(img_path, blur_threshold=BLUR_THRESHOLD, phone_max_width=PHON
         img_array = np.fromfile(img_path, dtype=np.uint8)
         img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
         if img is None:
-            return None
+            return 'error'
 
         h, w = img.shape[:2]
 
@@ -270,7 +285,7 @@ def classify_image(img_path, blur_threshold=BLUR_THRESHOLD, phone_max_width=PHON
         else:
             return 'desktop'
     except Exception:
-        return None
+        return 'error'
 
 def main():
     # 检测是否交互模式（screen 后台运行时 stdin 不可用）
@@ -501,12 +516,18 @@ def main():
         print(f"共发现 {total_count} 张图片，开始分类...")
 
         # 分类（支持并行处理）
-        stats = {'phone': 0, 'desktop': 0, 'blur': 0, 'skipped': 0}
+        stats = {'phone': 0, 'desktop': 0, 'blur': 0, 'skipped': 0, 'error': 0}
         start_time = time.time()
         classify_fn = partial(classify_image, blur_threshold=blur_threshold, phone_max_width=phone_max_width)
 
         def _move_file(root, fname, category):
             """将单张图片移动到对应分类目录（防重名）"""
+            if category is None or category == 'error':
+                if category == 'error':
+                    stats['error'] += 1
+                else:
+                    stats['skipped'] += 1
+                return
             if category not in dirs:
                 stats['skipped'] += 1
                 return
@@ -526,7 +547,7 @@ def main():
             elapsed = time.time() - start_time
             speed = i / elapsed if elapsed > 0 else 0
             eta = (total_count - i) / speed if speed > 0 else 0
-            print(f"  [{i}/{total_count}] 手机:{stats['phone']} 电脑:{stats['desktop']} 模糊:{stats['blur']} 跳过:{stats['skipped']} | {speed:.1f} 张/秒 | 预计剩余 {eta:.0f}s")
+            print(f"  [{i}/{total_count}] 手机:{stats['phone']} 电脑:{stats['desktop']} 模糊:{stats['blur']} 跳过:{stats['skipped']} 错误:{stats['error']} | {speed:.1f} 张/秒 | 预计剩余 {eta:.0f}s")
 
         if use_parallel and total_count > 1:
             print(f"  使用 {workers} 个并行进程进行分类...")
@@ -549,7 +570,7 @@ def main():
                     _print_progress(i)
 
         elapsed = time.time() - start_time
-        total_processed = stats['phone'] + stats['desktop'] + stats['blur'] + stats['skipped']
+        total_processed = stats['phone'] + stats['desktop'] + stats['blur'] + stats['skipped'] + stats['error']
         if total_processed != total_count:
             print(f"⚠️  警告：处理数 ({total_processed}) 与扫描数 ({total_count}) 不一致，请检查！")
         avg_speed = total_processed / elapsed if elapsed > 0 else 0
@@ -560,7 +581,10 @@ def main():
         print(f"  💻 电脑 : {stats['desktop']:>6} 张")
         print(f"  🔍 模糊 : {stats['blur']:>6} 张")
         print(f"  ⏭️  跳过 : {stats['skipped']:>6} 张")
+        print(f"  ❌ 错误 : {stats['error']:>6} 张")
         print(f"  📦 合计 : {total_processed:>6} 张")
+        if stats['error'] > 0:
+            print(f"\n  ⚠️  {stats['error']} 张图片无法读取（已损坏或格式不支持）")
 
         # 无图片时跳过打包
         if total_count == 0:

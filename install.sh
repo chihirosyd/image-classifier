@@ -86,6 +86,9 @@ fi
 # ---------- 2. 创建本地目录 ----------
 echo ""
 echo "[2/6] 创建本地工作目录..."
+if [ -d "$TARGET_DIR" ]; then
+    echo "  ⚠️  目录已存在: $TARGET_DIR（将覆盖同名脚本文件，配置文件不受影响）"
+fi
 mkdir -p "$TARGET_DIR"
 cd "$TARGET_DIR"
 mkdir -p "$TARGET_DIR/input" "$TARGET_DIR/output"
@@ -101,8 +104,8 @@ curl -sSL -o classifier.sh "${DOWNLOAD_BASE}/classifier.sh"
 curl -sSL -o config.json "${DOWNLOAD_BASE}/config.json"
 curl -sSL -o VERSION "${DOWNLOAD_BASE}/VERSION"
 curl -sSL -o .gitignore "${DOWNLOAD_BASE}/.gitignore"
-curl -sSL -o README.md "${DOWNLOAD_BASE}/README.md" || true
-curl -sSL -o CHANGELOG.md "${DOWNLOAD_BASE}/CHANGELOG.md" || true
+curl -sSL -o README.md "${DOWNLOAD_BASE}/README.md" || echo "  ⚠️  README.md 下载失败（不影响功能）"
+curl -sSL -o CHANGELOG.md "${DOWNLOAD_BASE}/CHANGELOG.md" || echo "  ⚠️  CHANGELOG.md 下载失败（不影响功能）"
 chmod +x classify.py classifier.sh
 
 # 校验下载内容（防止下载到 HTML 错误页）

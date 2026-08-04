@@ -11,7 +11,7 @@ PYTHON_BIN="$VENV_DIR/bin/python"
 PIP_BIN="$VENV_DIR/bin/pip"
 REQUIRED=(opencv-python-headless numpy)
 if [ -f "$SCRIPT_DIR/VERSION" ]; then
-    VERSION=$(cat "$SCRIPT_DIR/VERSION")
+    VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")
 else
     VERSION="1.0.0"
 fi
@@ -94,6 +94,25 @@ setup_env() {
             echo "已删除旧环境"
         else
             echo "保持现有环境"
+            # 验证依赖完整性
+            if [ -f "$PYTHON_BIN" ]; then
+                if ! "$PYTHON_BIN" -c "import cv2, numpy" 2>/dev/null; then
+                    echo -e "${YELLOW}⚠️  检测到依赖不完整（缺少 opencv / numpy）${NC}"
+                    echo -n "是否重新安装依赖？(y/n，回车默认为y): "
+                    read -r reinstall
+                    reinstall=${reinstall,,}
+                    reinstall=${reinstall:-y}
+                    if [ "$reinstall" = "y" ]; then
+                        echo "正在重新安装依赖..."
+                        "$PIP_BIN" install --upgrade pip -q 2>/dev/null
+                        if "$PIP_BIN" install "${REQUIRED[@]}"; then
+                            echo -e "${GREEN}✅ 依赖修复完成${NC}"
+                        else
+                            echo -e "${RED}❌ 依赖安装失败，请执行「环境准备」→ 选择重新创建${NC}"
+                        fi
+                    fi
+                fi
+            fi
             return
         fi
     fi
@@ -231,7 +250,7 @@ update_scripts() {
     # 检查远程版本（下载 VERSION 文件，仅几字节）
     echo "正在检查版本..."
     local remote_version
-    remote_version=$(curl -sSL --connect-timeout 5 --max-time 10 "${BASE}/VERSION" 2>/dev/null | head -1)
+    remote_version=$(curl -sSL --connect-timeout 5 --max-time 10 "${BASE}/VERSION" 2>/dev/null | tr -d '[:space:]')
     if [ -z "$remote_version" ]; then
         echo -e "${YELLOW}⚠️  无法获取远程版本信息，继续更新...${NC}"
     elif [ "$remote_version" = "$VERSION" ]; then
@@ -241,7 +260,8 @@ update_scripts() {
         echo -e "${YELLOW}发现新版本: v${remote_version}（当前 v${VERSION}）${NC}"
         # 尝试获取更新内容
         local changelog
-        changelog=$(curl -sSL --connect-timeout 5 --max-time 10 "${BASE}/CHANGELOG.md" 2>/dev/null | sed -n "/^## v${remote_version}/,/^## v/{/^## v${remote_version}/d;/^## v/d;p;}" | head -20)
+        local escaped_ver="${remote_version//./\\.}"
+        changelog=$(curl -sSL --connect-timeout 5 --max-time 10 "${BASE}/CHANGELOG.md" 2>/dev/null | sed -n "/^## v${escaped_ver}/,/^## v/{/^## v${escaped_ver}/d;/^## v/d;p;}" | head -20)
         if [ -n "$changelog" ]; then
             echo ""
             echo "──────── 更新内容 ────────"
@@ -261,17 +281,25 @@ update_scripts() {
     echo "正在下载最新脚本..."
     local tmp_dir
     tmp_dir=$(mktemp -d) || { echo -e "${RED}❌ 无法创建临时目录${NC}"; return 1; }
-    local dl_ok=1
-    curl -sSL -o "$tmp_dir/classifier.sh" "$BASE/classifier.sh" || dl_ok=0
-    curl -sSL -o "$tmp_dir/classify.py" "$BASE/classify.py" || dl_ok=0
-    curl -sSL -o "$tmp_dir/VERSION" "$BASE/VERSION" || dl_ok=0
-    curl -sSL -o "$tmp_dir/install.sh" "$BASE/install.sh" || dl_ok=0
-    curl -sSL -o "$tmp_dir/CHANGELOG.md" "$BASE/CHANGELOG.md" || dl_ok=0
-    curl -sSL -o "$tmp_dir/.gitignore" "$BASE/.gitignore" || dl_ok=0
-    curl -sSL -o "$tmp_dir/README.md" "$BASE/README.md" || dl_ok=0
-    curl -sSL -o "$tmp_dir/config.json.new" "$BASE/config.json" || dl_ok=0
+    local dl_ok=1 dl_errors=""
+    _dl() {
+        if ! curl -sS --connect-timeout 10 --max-time 30 -o "$1" "$2"; then
+            dl_ok=0
+            dl_errors+="  $2"$'\n'
+        fi
+    }
+    _dl "$tmp_dir/classifier.sh" "$BASE/classifier.sh"
+    _dl "$tmp_dir/classify.py" "$BASE/classify.py"
+    _dl "$tmp_dir/VERSION" "$BASE/VERSION"
+    _dl "$tmp_dir/install.sh" "$BASE/install.sh"
+    _dl "$tmp_dir/CHANGELOG.md" "$BASE/CHANGELOG.md"
+    _dl "$tmp_dir/.gitignore" "$BASE/.gitignore"
+    _dl "$tmp_dir/README.md" "$BASE/README.md"
+    _dl "$tmp_dir/config.json.new" "$BASE/config.json"
     if [ "$dl_ok" -eq 0 ]; then
-        echo -e "${RED}❌ 下载失败，请检查网络后重试${NC}"
+        echo -e "${RED}❌ 下载失败！${NC}"
+        echo -e "${YELLOW}失败的链接:${NC}"
+        printf '%s' "$dl_errors"
         rm -rf "$tmp_dir"
         return 1
     fi
@@ -345,18 +373,40 @@ print(' '.join(added)) if added else print('')
             esac
 
             if [ "${do_merge:-y}" = "y" ]; then
-                python3 -c "
+                local merge_log
+                merge_log=$(python3 -c "
+import json, sys
+try:
+    old = json.load(open('$CONFIG_FILE'))
+    new = json.load(open('$tmp_dir/config.json.new'))
+    added = []
+    for k, v in new.items():
+        if k not in old:
+            old[k] = v
+            added.append(k)
+    json.dump(old, open('$CONFIG_FILE', 'w'), indent=2, ensure_ascii=False)
+    print(f'✅ 已合并 {len(added)} 个新字段: {\" \".join(added) if added else \"(无)\"}')
+except Exception as e:
+    print(f'ERROR:{e}', file=sys.stderr)
+    sys.exit(1)
+" 2>&1)
+                if [ $? -eq 0 ]; then
+                    echo "  ${merge_log}"
+                else
+                    echo -e "${RED}  ❌ 配置合并失败！${NC}"
+                    echo "  错误详情: ${merge_log}"
+                    echo -e "${YELLOW}  你的现有配置文件未被修改。${NC}"
+                    echo -e "${YELLOW}  但以下新字段未添加，可能影响新功能：${NC}"
+                    python3 -c "
 import json
 old = json.load(open('$CONFIG_FILE'))
 new = json.load(open('$tmp_dir/config.json.new'))
-added = []
-for k, v in new.items():
-    if k not in old:
-        old[k] = v
-        added.append(k)
-json.dump(old, open('$CONFIG_FILE', 'w'), indent=2, ensure_ascii=False)
-print(f'  ✅ 已合并 {len(added)} 个新字段: {added}')
-" 2>/dev/null || echo "  ⚠️  配置合并失败，保留现有配置"
+missing = [k for k in new if k not in old]
+if missing:
+    print(f'  缺失字段: {missing}')
+    print(f'  建议手动补全或通过菜单 [4] 重新设置')
+" 2>/dev/null
+                fi
             fi
         else
             echo "  配置无需更新（无新增字段）"
@@ -380,6 +430,7 @@ select_zip() {
     local files=()
     local file_count=0
     # 直接遍历 input/ 目录，避免 find + 进程替换在某些环境下不稳定
+    shopt -s nullglob  # 空目录时不迭代字面量 *
     for f in "$INPUT_DIR"/*; do
         [ -f "$f" ] || continue
         local name_lower
@@ -391,6 +442,7 @@ select_zip() {
                 ;;
         esac
     done
+    shopt -u nullglob
 
     if [ "$file_count" -gt 0 ]; then
         echo "找到以下压缩包（位于 $INPUT_DIR）：" >&2
@@ -401,7 +453,7 @@ select_zip() {
         echo -n "请选择编号 (0-$file_count): " >&2
         read -r num
         if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "$file_count" ]; then
-            echo "${files[$((num-1))]}"
+            printf '%s\n' "${files[$((num-1))]}"
             return
         elif [ "$num" -eq 0 ]; then
             :
@@ -415,9 +467,9 @@ select_zip() {
     echo -n "请输入压缩包路径（默认目录: $INPUT_DIR，可直接输文件名）: " >&2
     read -r manual_path
     if [ -f "$manual_path" ]; then
-        echo "$manual_path"
+        printf '%s\n' "$manual_path"
     elif [ -f "$INPUT_DIR/$manual_path" ]; then
-        echo "$INPUT_DIR/$manual_path"
+        printf '%s\n' "$INPUT_DIR/$manual_path"
     else
         echo -e "${RED}错误：文件 '$manual_path' 不存在！${NC}" >&2
         return 1
@@ -453,21 +505,31 @@ run_classify() {
     use_nice=${use_nice,,}
     use_nice=${use_nice:-y}
 
-    CMD="source \"$VENV_DIR/bin/activate\" && "
-    if [ "$use_nice" = "y" ]; then CMD+="nice -n 19 "; fi
-    CMD+="python \"$SCRIPT_DIR/classify.py\" \"$zipfile\""
-
     if [ "$use_screen" = "y" ]; then
-        SCREEN_NAME="classify_$(date +%s)"
+        SCREEN_NAME="classify_$(date +%s)_$RANDOM"
         echo -e "${GREEN}启动 screen 会话：$SCREEN_NAME${NC}"
         echo "分类开始后，按 Ctrl+A D 可脱离后台；重新查看：screen -r $SCREEN_NAME"
         echo "实时进度: tail -f $SCRIPT_DIR/logs/classify_*.log"
         sleep 2
-        screen -dmS "$SCREEN_NAME" bash -c "$CMD"
+        if [ "$use_nice" = "y" ]; then
+            screen -dmS "$SCREEN_NAME" nice -n 19 bash -c 'source "$1/bin/activate" && python "$2/classify.py" "$3"' _ "$VENV_DIR" "$SCRIPT_DIR" "$zipfile" || {
+                echo -e "${RED}❌ screen 会话创建失败（可能同名任务已存在），请稍后重试${NC}"
+                return 1
+            }
+        else
+            screen -dmS "$SCREEN_NAME" bash -c 'source "$1/bin/activate" && python "$2/classify.py" "$3"' _ "$VENV_DIR" "$SCRIPT_DIR" "$zipfile" || {
+                echo -e "${RED}❌ screen 会话创建失败（可能同名任务已存在），请稍后重试${NC}"
+                return 1
+            }
+        fi
         echo -e "${YELLOW}任务已在后台启动，会话名：$SCREEN_NAME${NC}"
     else
         echo "直接运行（前台），完成后自动返回菜单。"
-        bash -c "$CMD"
+        if [ "$use_nice" = "y" ]; then
+            bash -c 'source "$1/bin/activate" && nice -n 19 python "$2/classify.py" "$3"' _ "$VENV_DIR" "$SCRIPT_DIR" "$zipfile"
+        else
+            bash -c 'source "$1/bin/activate" && python "$2/classify.py" "$3"' _ "$VENV_DIR" "$SCRIPT_DIR" "$zipfile"
+        fi
     fi
 }
 
@@ -483,7 +545,7 @@ list_screens() {
     echo -n "输入会话名可恢复，直接回车返回菜单: "
     read -r sname
     if [ -n "$sname" ] && [ "$sname" != "0" ] && [ "$sname" != "q" ]; then
-        screen -r "$sname"
+        screen -r -- "$sname"
     fi
 }
 
@@ -508,10 +570,14 @@ show_config() {
     if [ -f "$PYTHON_BIN" ]; then
         "$PYTHON_BIN" "$SCRIPT_DIR/classify.py" --show-config
     else
-        echo -e "${YELLOW}虚拟环境未就绪，显示默认配置：${NC}"
+        echo -e "${YELLOW}虚拟环境未就绪，以下为配置文件原始内容：${NC}"
+        echo -e "${YELLOW}（实际运行时 workers/temp_dir/output_dir 会被自动检测调整）${NC}"
         if [ -f "$CONFIG_FILE" ]; then
             echo "  配置文件: $CONFIG_FILE"
             cat "$CONFIG_FILE"
+            echo ""
+            echo "  提示：workers=0 → 自动检测CPU核心数"
+            echo "        temp_dir/output_dir 为空 → 使用默认路径"
         else
             echo "  phone_max_width  = 1200"
             echo "  blur_threshold   = 100"
@@ -531,19 +597,20 @@ config_params() {
     echo "（直接回车保留当前值）"
     echo ""
 
-    local cur_width=1200
-    local cur_blur=100
-    local cur_log=500
-    local cur_workers=0
-    local cur_temp_dir=""
-    local cur_output_dir=""
+    local cur_width=1200 cur_blur=100 cur_log=500 cur_workers=0 cur_temp_dir="" cur_output_dir=""
     if [ -f "$CONFIG_FILE" ] && command -v python3 &>/dev/null; then
-        cur_width=$(python3 -c "import json;print(json.load(open('$CONFIG_FILE')).get('phone_max_width',1200))" 2>/dev/null || echo 1200)
-        cur_blur=$(python3 -c "import json;print(json.load(open('$CONFIG_FILE')).get('blur_threshold',100))" 2>/dev/null || echo 100)
-        cur_log=$(python3 -c "import json;print(json.load(open('$CONFIG_FILE')).get('log_interval',500))" 2>/dev/null || echo 500)
-        cur_workers=$(python3 -c "import json;print(json.load(open('$CONFIG_FILE')).get('workers',0))" 2>/dev/null || echo 0)
-        cur_temp_dir=$(python3 -c "import json;print(json.load(open('$CONFIG_FILE')).get('temp_dir',''))" 2>/dev/null || echo "")
-        cur_output_dir=$(python3 -c "import json;print(json.load(open('$CONFIG_FILE')).get('output_dir',''))" 2>/dev/null || echo "")
+        # 一次 Python 调用读取全部数值字段（_rest 吸收未来可能新增的字段，防止溢出到 cur_workers）
+        read -r cur_width cur_blur cur_log cur_workers _rest <<< "$(python3 -c "
+import json
+try:
+    c = json.load(open('$CONFIG_FILE'))
+except:
+    c = {}
+print(c.get('phone_max_width',1200), c.get('blur_threshold',100), c.get('log_interval',500), c.get('workers',0))
+" 2>/dev/null || echo '1200 100 500 0')"
+        # 字符串字段单独读取（避免 eval 风险）
+        cur_temp_dir=$(python3 -c "import json;c=json.load(open('$CONFIG_FILE'));print(c.get('temp_dir',''))" 2>/dev/null || echo "")
+        cur_output_dir=$(python3 -c "import json;c=json.load(open('$CONFIG_FILE'));print(c.get('output_dir',''))" 2>/dev/null || echo "")
     fi
     # 自动检测 CPU 核心数作为提示
     local cpu_hint=""
@@ -590,43 +657,56 @@ config_params() {
     echo -n "${temp_label}："
     read -r new_temp_dir
     new_temp_dir=${new_temp_dir:-$cur_temp_dir}
-    # 移除路径中可能误输入的双引号
-    new_temp_dir=$(echo "$new_temp_dir" | sed 's/"//g')
+    # 移除路径中可能误输入的双引号，使用 printf 避免 echo 吞 -n 等选项
+    new_temp_dir=$(printf '%s\n' "$new_temp_dir" | sed 's/"//g')
 
     local out_label="输出目录路径，留空=脚本目录下的 output/"
     [ -n "$cur_output_dir" ] && out_label="输出目录路径，留空=默认（当前: ${cur_output_dir}）"
     echo -n "${out_label}："
     read -r new_output_dir
     new_output_dir=${new_output_dir:-$cur_output_dir}
-    new_output_dir=$(echo "$new_output_dir" | sed 's/"//g')
+    new_output_dir=$(printf '%s\n' "$new_output_dir" | sed 's/"//g')
 
-    cat > "$CONFIG_FILE.tmp" << EOF
-{
-  "phone_max_width": $new_width,
-  "blur_threshold": $new_blur,
-  "log_interval": $new_log,
-  "workers": $new_workers,
-  "temp_dir": "$new_temp_dir",
-  "output_dir": "$new_output_dir"
-}
-EOF
-    # 合并写入：保留配置文件中可能存在的其他字段（如未来新增的键）
-    python3 -c "
-import json
-old = json.load(open('$CONFIG_FILE')) if open('$CONFIG_FILE').read().strip() else {}
-new = json.load(open('$CONFIG_FILE.tmp'))
-old.update(new)
-json.dump(old, open('$CONFIG_FILE', 'w'), indent=2, ensure_ascii=False)
-" 2>/dev/null || mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
-    rm -f "$CONFIG_FILE.tmp"
-    echo ""
-    echo -e "${GREEN}✅ 配置已保存到 $CONFIG_FILE${NC}"
-    echo "  phone_max_width  = $new_width"
-    echo "  blur_threshold   = $new_blur"
-    echo "  log_interval     = $new_log"
-    echo "  workers          = $new_workers（0=自动检测）"
-    echo "  temp_dir         = ${new_temp_dir:-系统默认}"
-    echo "  output_dir       = ${new_output_dir:-默认}"
+    # 通过环境变量安全传递路径（避免 JSON 注入），Python 直接写最终配置
+    export _CFG_PATH="$CONFIG_FILE"
+    export _CFG_TEMP_DIR="$new_temp_dir"
+    export _CFG_OUTPUT_DIR="$new_output_dir"
+
+    if python3 -c "
+import json, os, sys
+try:
+    cfg = {}
+    try:
+        with open(os.environ['_CFG_PATH']) as f:
+            cfg = json.load(f)
+    except Exception:
+        pass
+    cfg.update({
+        'phone_max_width': $new_width,
+        'blur_threshold': $new_blur,
+        'log_interval': $new_log,
+        'workers': ${new_workers:-0},
+        'temp_dir': os.environ.get('_CFG_TEMP_DIR', ''),
+        'output_dir': os.environ.get('_CFG_OUTPUT_DIR', ''),
+    })
+    with open(os.environ['_CFG_PATH'], 'w') as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+except Exception as e:
+    print(f'ERROR: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>&1; then
+        echo ""
+        echo -e "${GREEN}✅ 配置已保存到 $CONFIG_FILE${NC}"
+        echo "  phone_max_width  = $new_width"
+        echo "  blur_threshold   = $new_blur"
+        echo "  log_interval     = $new_log"
+        echo "  workers          = $new_workers（0=自动检测）"
+        echo "  temp_dir         = ${new_temp_dir:-系统默认}"
+        echo "  output_dir       = ${new_output_dir:-默认}"
+    else
+        echo -e "${RED}❌ 配置保存失败！原配置文件保持不变。${NC}"
+        return 1
+    fi
 }
 
 while true; do
