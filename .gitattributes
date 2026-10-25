@@ -1,0 +1,6 @@
+# 统一脚本与源码的行尾：避免 Windows 检出 CRLF 造成整文件 diff
+*.sh text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+VERSION text eol=lf
+*.md text eol=lf

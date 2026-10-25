@@ -23,3 +23,8 @@ Thumbs.db
 
 # Temp
 /tmp/
+/tests/_tmp/
+
+# 本地私有（审查记录、权限修复备份）——不入库
+/private-reviews/
+/.acl-recovery/

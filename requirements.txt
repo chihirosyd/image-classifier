@@ -1,0 +1,8 @@
+# 运行依赖（Python 3.10+）
+# 安装：pip install -r requirements.txt
+opencv-python-headless>=4.5,<5
+numpy>=1.21,<3
+pillow>=9.0,<12
+
+# 可选：HEIC / HEIF 支持（取消注释后会被一并安装）
+# pillow-heif>=0.13

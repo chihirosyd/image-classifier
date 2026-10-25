@@ -1,0 +1,166 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # P1-1 发布产物完整性闸门：用 python 实现（不依赖 sha256sum 命令），
+      # Linux 与 Windows runner 都能直接跑，无需额外安装任何工具。
+      # 任一文件不匹配 / 清单缺文件 → exit 1，并打印具体是哪个文件。
+      - name: Verify SHA256SUMS (fail closed)
+        run: |
+          python -c "import hashlib, os, sys
+          root = os.environ.get('GITHUB_WORKSPACE') or os.getcwd()
+          manifest = os.path.join(root, 'SHA256SUMS')
+          if not os.path.isfile(manifest):
+              sys.stderr.write('ERROR: SHA256SUMS not found: ' + manifest + '\n')
+              sys.exit(1)
+          bad = []
+          checked = 0
+          for raw in open(manifest, encoding='utf-8', errors='replace'):
+              line = raw.strip()
+              if not line or line.startswith('#'):
+                  continue
+              parts = line.split(None, 1)
+              if len(parts) != 2:
+                  bad.append('malformed manifest line: ' + line)
+                  continue
+              want = parts[0].strip().lower()
+              name = parts[1].strip()
+              if name.startswith('*'):
+                  name = name[1:]
+              if not name:
+                  bad.append('empty path in manifest line: ' + line)
+                  continue
+              target = os.path.join(root, name)
+              if not os.path.isfile(target):
+                  bad.append(name + ' (missing file)')
+                  continue
+              with open(target, 'rb') as fh:
+                  data = fh.read()
+              # 校验和按仓库内容（LF）口径计算；工作区若是 CRLF 也不误报
+              got = hashlib.sha256(data.replace(b'\r\n', b'\n')).hexdigest()
+              checked += 1
+              if got != want:
+                  bad.append(name + ' (expected ' + want + ', got ' + got + ')')
+          if bad:
+              sys.stderr.write('SHA256 mismatch, ' + str(len(bad)) + ' file(s) failed:' + '\n')
+              for item in bad:
+                  sys.stderr.write('  - ' + item + '\n')
+              sys.exit(1)
+          sys.stdout.write('SHA256SUMS OK: ' + str(checked) + ' file(s) verified against ' + manifest + '\n')
+          "
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compile
+        run: python -m compileall -q classify.py
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Bash syntax
+        if: runner.os == 'Linux'
+        run: bash -n classifier.sh && bash -n install.sh
+
+      - name: Shellcheck (advisory)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y shellcheck
+          shellcheck -S error classifier.sh install.sh
+
+  # P1-4 Windows 矩阵：验证 Windows runner 上 classify.py 与测试可用，
+  # 并用 PYTHONIOENCODING=gbk 复现 L-01（控制台编码非 UTF-8 时崩溃）的场景。
+  test-windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # 与 Linux 作业完全一致的校验和闸门（同一段 python 代码）
+      - name: Verify SHA256SUMS (fail closed)
+        run: |
+          python -c "import hashlib, os, sys
+          root = os.environ.get('GITHUB_WORKSPACE') or os.getcwd()
+          manifest = os.path.join(root, 'SHA256SUMS')
+          if not os.path.isfile(manifest):
+              sys.stderr.write('ERROR: SHA256SUMS not found: ' + manifest + '\n')
+              sys.exit(1)
+          bad = []
+          checked = 0
+          for raw in open(manifest, encoding='utf-8', errors='replace'):
+              line = raw.strip()
+              if not line or line.startswith('#'):
+                  continue
+              parts = line.split(None, 1)
+              if len(parts) != 2:
+                  bad.append('malformed manifest line: ' + line)
+                  continue
+              want = parts[0].strip().lower()
+              name = parts[1].strip()
+              if name.startswith('*'):
+                  name = name[1:]
+              if not name:
+                  bad.append('empty path in manifest line: ' + line)
+                  continue
+              target = os.path.join(root, name)
+              if not os.path.isfile(target):
+                  bad.append(name + ' (missing file)')
+                  continue
+              with open(target, 'rb') as fh:
+                  data = fh.read()
+              # 校验和按仓库内容（LF）口径计算；工作区若是 CRLF 也不误报
+              got = hashlib.sha256(data.replace(b'\r\n', b'\n')).hexdigest()
+              checked += 1
+              if got != want:
+                  bad.append(name + ' (expected ' + want + ', got ' + got + ')')
+          if bad:
+              sys.stderr.write('SHA256 mismatch, ' + str(len(bad)) + ' file(s) failed:' + '\n')
+              for item in bad:
+                  sys.stderr.write('  - ' + item + '\n')
+              sys.exit(1)
+          sys.stdout.write('SHA256SUMS OK: ' + str(checked) + ' file(s) verified against ' + manifest + '\n')
+          "
+
+      # 只装 numpy + pillow，不装 opencv-python-headless。理由：
+      #   1) tests/test_core.py 自带 cv2 桩（_ensure_optional_stubs），没有 cv2 测试照样能跑；
+      #   2) 真依赖的 import 可用性已由 Linux 作业的 pip install -r requirements.txt 覆盖，
+      #      Windows 作业的职责是控制台编码与非交互行为，不需要图像库；
+      #   3) opencv-python-headless 的 win_amd64 轮子约 40MB，两个矩阵腿各下一次纯属浪费。
+      - name: Install dependencies (numpy + pillow only)
+        run: pip install "numpy>=1.21,<3" "pillow>=9.0,<12"
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests
+
+      # L-01 回归防护：Windows 控制台/管道默认非 UTF-8，强制 gbk 后整套测试仍须通过
+      - name: Unit tests (PYTHONIOENCODING=gbk)
+        env:
+          PYTHONIOENCODING: gbk
+        run: python -m unittest discover -s tests
